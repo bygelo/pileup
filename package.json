@@ -1,0 +1,34 @@
+{
+  "name": "pileup",
+  "version": "0.1.0",
+  "description": "Audit what your coding agent actually reads. Ranks a repo's context surface by cost x frequency.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "pileup": "bin/pileup.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "skill",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\""
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "cursor",
+    "copilot",
+    "context",
+    "token",
+    "prompt-cache",
+    "audit",
+    "agent"
+  ],
+  "dependencies": {}
+}

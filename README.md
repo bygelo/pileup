@@ -1,0 +1,160 @@
+# pileup
+
+Audit what your coding agent actually reads.
+
+```
+npx pileup
+```
+
+No install, no dependencies, no API key. It reports and prescribes. **It never edits your repo.**
+
+---
+
+## The problem
+
+A repo accumulates instructions the way a desk accumulates paper. A `CLAUDE.md`
+here, an `AGENTS.md` there, twenty skills, a decisions log that has been appended
+to for eight months, six MCP servers someone connected once. Nothing about any
+single addition looks expensive.
+
+Then you measure the opening turn of a session and it bills **227,000 tokens
+before the agent has done anything at all** — and every later turn pays it again.
+
+That number is real; it came from auditing a working repo with this tool. The
+files on disk accounted for 5,600 of it. The other 221,000 were invisible to
+anything that only looks at files.
+
+## The idea
+
+Context cost is not size. It is **size × how often you pay it**. pileup sorts
+everything an agent could load into four surfaces and ranks by that product:
+
+| surface | paid | example |
+|---|---|---|
+| **always-on** | every turn, every session | memory files, skill descriptions, MCP tool schemas |
+| **cache** | whenever the prefix churns | a hook that rewrites `CLAUDE.md`, switching models mid-session |
+| **on-read** | only if the agent opens it | a 1.1 MB decisions log linked from your memory file |
+| **on-invoke** | only when reached for | a skill body |
+
+2k tokens of always-on beats 200k tokens read once. A finding that costs you on
+every turn outranks a bigger one that might never be paid — that ordering is the
+whole thesis, and it lives in the sort.
+
+## What it looks like
+
+```
+pileup  ~/work/tna
+harness  Claude Code (32) · Codex (35)
+
+ALWAYS-ON  estimated from disk, per harness, against a 1.0M window
+  harness            total   memory    descr   defs   mcp  window
+  Claude Code         5.6k     2.7k     2.9k     26     6    0.6%
+  Codex               4.2k      548     3.7k     29     2    0.4%
+
+FINDINGS  9 critical · 7 high · 15 medium · 5 low
+
+CRITICAL measured always-on prefix: 223k tokens (worst 228k)
+         every turn
+         The smallest billed turn of each session, which is its opening turn: system prompt,
+         tool schemas, memory files and skill descriptions, before the session has done
+         anything. Every later turn pays this too.
+
+CRITICAL 218k tokens of always-on context are not on disk
+         every turn
+         Sessions measured a 223k-token prefix; the files pileup can read account for only
+         5.6k. The remainder is the harness's own system prompt and tool schemas -- including
+         6 MCP servers you configured, which can be the larger half of it.
+         fix: Disconnect MCP servers you do not use in this repo and re-run `pileup session`.
+
+CRITICAL docs/decisions.md is 327k tokens (33% of the window)
+         if opened
+         CLAUDE.md points the agent at this file. One whole-file read spends 33% of the
+         context window in a single tool call.
+         fix: Split docs/decisions.md into one file per entry plus a small index that maps
+         identifiers to files. Then the agent opens the index and one entry, not the archive.
+```
+
+## Usage
+
+```sh
+pileup                     # audit the current repo
+pileup ~/some/repo         # audit somewhere else
+pileup session             # measured token spend from local session transcripts
+pileup surface             # every surface pileup found, ungraded, as JSON
+pileup --json              # the full report, machine-readable
+```
+
+| option | |
+|---|---|
+| `--window <n>` | context window to measure against (default `200000`) |
+| `--no-user` | ignore the user-global surface (`~/.claude`, `~/.codex`) |
+| `--only a,b` / `--skip a,b` | pick collectors |
+| `--all` | include info-level findings |
+| `--sessions <n>` | how many recent sessions to read (default `20`) |
+
+## Collectors
+
+Each one is independent. A collector that throws is reported and skipped — a
+partial audit is still worth reading.
+
+| | |
+|---|---|
+| **memory** | instruction files injected on every turn, and the `@import`s they inline. An `@import` is not a link; its full text lands in the prefix. |
+| **definition** | skills, subagents and slash commands. Frontmatter `description` is always-on; the body is on-invoke. Grades the two separately, because they are not the same cost. |
+| **mcp** | configured servers. Every server's tool schemas ride every turn. |
+| **prefix** | hooks that rewrite the prefix mid-session, and memory files churning hard enough to keep invalidating the cache. |
+| **doc** | large files an agent could open whole. Escalates when a memory file points at one, because then the repo is not merely exposed to the risk — it is directing the agent into it. |
+| **session** | what the API actually billed. The only numbers here that are not estimates. |
+
+## Harnesses
+
+pileup detects Claude Code, Codex, Cursor, GitHub Copilot, Gemini CLI, Windsurf
+and Aider. The only thing that differs between them is *where they keep their
+files*; every analysis downstream is shared.
+
+Always-on cost is reported **per harness, never summed** — only one runs at a
+time, and adding them would describe a session nobody has.
+
+Adding a harness is one row in the table at the top of [lib/adapter.mjs](lib/adapter.mjs).
+Nothing else in pileup knows a harness name.
+
+A harness counts as in use only if the *repo* says so. Everyone has a stray
+`~/.gemini` lying around, and auditing it against an unrelated repo is exactly
+the noise pileup exists to remove.
+
+## On accuracy
+
+pileup ships zero dependencies, so it cannot run the real BPE tokenizer. It
+estimates from character-class runs, which tracks tokenizer behaviour better
+than the usual `chars / 4` and lands within roughly 10% on markdown, code and
+JSON. That is accurate enough to rank surfaces, which is all it claims to do.
+
+Two things are **measured, not estimated**:
+
+- everything under `pileup session`, which reads what the API billed
+- the always-on prefix, taken from the smallest billed turn of each session
+
+Everything else is an estimate and the report says so. When pileup cannot see
+something — MCP tool schemas, which need the servers running — it reports the
+gap rather than guessing at it.
+
+## What it will not do
+
+It does not edit your repo. It names the file, the number, and the specific fix,
+and stops there. Deciding what a `CLAUDE.md` is *for* is not a decision a linter
+gets to make.
+
+There is no daemon, no telemetry upload, no config file, and nothing to log into.
+It reads your repo and, if you ask for `session`, your local transcripts. Nothing
+leaves the machine.
+
+## Prior art it pairs with
+
+pileup measures; it does not advise. For the prescriptive half — prompt-cache
+discipline, session handoff, context budgeting as a practice — see the skills in
+[piper](https://github.com/bygelo/piper). pileup produces the numbers
+those skills otherwise ask you to estimate.
+
+## License
+
+MIT
