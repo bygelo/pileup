@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 import { audit } from '../lib/audit.mjs'
 import { estimateToken, formatToken } from '../lib/token.mjs'
@@ -201,6 +202,54 @@ test('skill: says nothing about firing when there are no transcripts to read', a
     !report.finding.some((x) => x.id === 'skill-never-invoked'),
     'absence of transcripts is not evidence a skill is unused',
   )
+})
+
+test('mcp-cost: prices what it can separate and refuses what it cannot', async () => {
+  const { auditMcpCost } = await import('../lib/mcpcost.mjs')
+  const { mcpMachine } = await import('./fixture.mjs')
+  const m = mcpMachine()
+
+  const report = auditMcpCost(m)
+  const id = (x) => report.finding.filter((f) => f.id === x)
+
+  // The prefix is the SMALLEST billed turn, never a later inflated one.
+  assert.equal(report.baseline.median, 40_000)
+  assert.equal(report.baseline.sample, 4)
+
+  // One server differs from baseline -> that server can be priced.
+  const single = id('mcp-server-cost')
+  assert.equal(single.length, 1)
+  assert.equal(single[0].data.server, 'heavy')
+  assert.equal(single[0].data.token, 50_000)
+  assert.equal(single[0].data.with, 3)
+
+  // Two servers always co-occur -> price the set, name no individual server.
+  const set = id('mcp-set-cost')
+  assert.equal(set.length, 1)
+  assert.deepEqual(set[0].data.server.sort(), ['alpha', 'beta'])
+  assert.equal(set[0].data.token, 100_000)
+  assert.ok(/cannot be separated/.test(set[0].why))
+
+  // One repo is an anecdote, not a measurement.
+  assert.deepEqual(id('mcp-cost-undersampled')[0].data.server, ['solo'])
+
+  // A contrast inside the noise floor is not a cost.
+  assert.ok(id('mcp-cost-negligible')[0].data.server.includes('tiny'))
+  assert.equal(id('mcp-server-cost').some((f) => f.data.server === 'tiny'), false)
+
+  // A server in every repo has no comparison group.
+  assert.deepEqual(id('mcp-cost-global')[0].data.server, ['everywhere'])
+  assert.ok(
+    report.group.every((g) => !g.server.includes('everywhere')),
+    'a global server must not appear in any contrast group',
+  )
+})
+
+test('mcp-cost: refuses to contrast too few repos', async () => {
+  const { auditMcpCost } = await import('../lib/mcpcost.mjs')
+  const report = auditMcpCost({ transcript: join(tmpdir(), 'pileup-does-not-exist') })
+  assert.deepEqual(report.finding, [])
+  assert.match(report.note, /at least 4/)
 })
 
 test('audit: always-on is reported per harness, never summed across them', () => {

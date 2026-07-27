@@ -76,6 +76,51 @@ export function skillRoot() {
   return { root, pool, transcript, ledger: join(base, 'ledger.json') }
 }
 
+/**
+ * A synthetic machine for MCP cost attribution: several repos, each with a
+ * declared server set and transcripts whose smallest billed turn is its prefix.
+ *
+ * Shaped so every refusal path is exercised — a single-server contrast that CAN
+ * be priced, a two-server set that cannot, a one-repo set that is undersampled,
+ * a sub-noise contrast, and a global server with no comparison group.
+ */
+export function mcpMachine() {
+  const base = mkdtempSync(join(tmpdir(), 'pileup-mcp-'))
+  const transcript = join(base, 'projects')
+  const repoBase = join(base, 'repo')
+
+  const repo = [
+    ...['bare1', 'bare2', 'bare3', 'bare4'].map((n) => [n, [], 40_000]),
+    ...['heavy1', 'heavy2', 'heavy3'].map((n) => [n, ['heavy'], 90_000]),
+    ...['pair1', 'pair2'].map((n) => [n, ['alpha', 'beta'], 140_000]),
+    ['lonely', ['solo'], 200_000],
+    ['cheap1', ['tiny'], 41_000],
+    ['cheap2', ['tiny'], 41_500],
+  ]
+
+  const project = {}
+  for (const [name, server, prefix] of repo) {
+    const cwd = join(repoBase, name)
+    write(cwd, '.mcp.json', JSON.stringify({ mcpServers: Object.fromEntries(server.map((s) => [s, {}])) }))
+    project[cwd] = {}
+
+    // Two turns: the prefix, and a larger later turn it must not be confused with.
+    const turn = (total) =>
+      JSON.stringify({
+        type: 'assistant',
+        cwd,
+        version: '2.0.0',
+        message: { usage: { cache_read_input_tokens: total, cache_creation_input_tokens: 0, input_tokens: 0 } },
+      })
+    write(transcript, `${name}/session.jsonl`, [turn(prefix + 250_000), turn(prefix)].join('\n'))
+  }
+
+  const config = join(base, 'config.json')
+  write(base, 'config.json', JSON.stringify({ mcpServers: { everywhere: {} }, projects: project }))
+
+  return { transcript, config }
+}
+
 const TIGHT =
   '---\nname: tight\ndescription: Split a doc into an index plus entries. Use when a doc exceeds the window. Skip for code.\n---\n\n# Tight\n\nDo the thing.\n'
 

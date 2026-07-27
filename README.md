@@ -81,9 +81,52 @@ pileup                     # audit the current repo
 pileup ~/some/repo         # audit somewhere else
 pileup session             # measured token spend from local session transcripts
 pileup skill               # what the skill discovery root costs, and what it earns
+pileup mcp-cost            # price MCP servers by contrast across all your repos
 pileup surface             # every surface pileup found, ungraded, as JSON
 pileup --json              # the full report, machine-readable
 ```
+
+### `pileup mcp-cost` — which server is it, actually
+
+`pileup audit` can tell you the prefix is enormous and that most of it isn't on
+disk. It can't tell you *which server to disconnect*, because tool schemas are
+only visible to a running harness.
+
+`mcp-cost` recovers that by natural experiment. Every repo on your machine is a
+sample: a declared server set and a measured opening prefix. Repos with a server,
+compared against repos without it, price it.
+
+```
+    repos    prefix   vs base  declared servers
+       38       38k  baseline  none
+        4       37k     -1.2k  core
+        2       33k     -4.9k  core, slack, trin
+        3      308k     +270k  core, google-docs, google-sheets, granola, slack
+
+CRITICAL 5 servers together cost about 270k tokens on every turn
+         core, google-docs, google-sheets and 2 more always appear together across 3
+         repos, so their individual costs cannot be separated.
+         fix: Disconnect them one at a time and re-run. Each removal creates a new
+         group and the next run can price what changed.
+
+INFO     4 servers show no cost above noise: core, slack, trin, tripi-place
+INFO     chrome-devtools configured globally, so it is unpriceable
+```
+
+**Knowing when to refuse is the whole design.** A regression over this data would
+have produced six confident per-server numbers from one observation. Instead:
+
+- Servers that always co-occur price as a **set**, and the finding says so.
+- A set used in one repo is an anecdote, not a measurement.
+- Contrasts inside the noise floor are reported as *no measurable cost*, never as
+  a negative one.
+- A globally-configured server has no comparison group and is called unpriceable.
+- The report names its own confounds — outlier repos excluded, and how many
+  harness versions the samples span, since the system prompt changes per release.
+
+One honest caveat it prints itself: a server that is declared but never actually
+connects also measures as free. A zero can mean *"not loading"* rather than
+*"carries no schemas"*.
 
 ### `pileup skill` — promotion as a measured decision
 

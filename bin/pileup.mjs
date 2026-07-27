@@ -4,7 +4,14 @@
 import { resolve } from 'node:path'
 import { audit } from '../lib/audit.mjs'
 import { auditSkill } from '../lib/skill.mjs'
-import { render, renderFinding, renderSession, renderSkill } from '../lib/report/text.mjs'
+import { auditMcpCost } from '../lib/mcpcost.mjs'
+import {
+  render,
+  renderFinding,
+  renderMcpCost,
+  renderSession,
+  renderSkill,
+} from '../lib/report/text.mjs'
 
 const USAGE = `
 pileup -- audit what your coding agent actually reads
@@ -45,10 +52,23 @@ if (arg.includes('--help') || arg.includes('-h')) {
   process.exit(0)
 }
 
-const COMMAND = new Set(['audit', 'session', 'surface', 'skill'])
+const COMMAND = new Set(['audit', 'session', 'surface', 'skill', 'mcp-cost'])
 const command = COMMAND.has(arg[0]) ? arg.shift() : 'audit'
 
 const flag = parseFlag(arg)
+
+// `mcp-cost` prices servers by comparing every repo on the machine, so it takes
+// no path either.
+if (command === 'mcp-cost') {
+  const report = auditMcpCost({})
+  if (flag.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
+  else if (report.note && !report.group.length) process.stdout.write(`\n  ${report.note}\n\n`)
+  else {
+    process.stdout.write(renderMcpCost(report))
+    process.stdout.write(renderFinding(report.finding, { all: true }))
+  }
+  process.exit(0)
+}
 
 // `skill` audits the machine, not a repo -- promotion is a machine-wide decision.
 if (command === 'skill') {
