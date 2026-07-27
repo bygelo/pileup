@@ -43,7 +43,7 @@ whole thesis, and it lives in the sort.
 ## What it looks like
 
 ```
-pileup  ~/work/tna
+pileup  ~/work/api
 harness  Claude Code (32) · Codex (35)
 
 ALWAYS-ON  estimated from disk, per harness, against a 1.0M window
@@ -99,18 +99,18 @@ compared against repos without it, price it.
 ```
     repos    prefix   vs base  declared servers
        38       38k  baseline  none
-        4       37k     -1.2k  core
-        2       33k     -4.9k  core, slack, trin
-        3      308k     +270k  core, google-docs, google-sheets, granola, slack
+        4       37k     -1.2k  repo-index
+        2       33k     -4.9k  repo-index, chat, search
+        3      308k     +270k  browser, docs, sheets, notes, chat
 
 CRITICAL 5 servers together cost about 270k tokens on every turn
-         core, google-docs, google-sheets and 2 more always appear together across 3
+         browser, docs, sheets and 2 more always appear together across 3
          repos, so their individual costs cannot be separated.
          fix: Disconnect them one at a time and re-run. Each removal creates a new
          group and the next run can price what changed.
 
-INFO     4 servers show no cost above noise: core, slack, trin, tripi-place
-INFO     chrome-devtools configured globally, so it is unpriceable
+INFO     4 servers show no cost above noise: repo-index, chat, notes, search
+INFO     browser configured globally, so it is unpriceable
 ```
 
 **Knowing when to refuse is the whole design.** A regression over this data would
@@ -131,14 +131,14 @@ connects also measures as free. A zero can mean *"not loading"* rather than
 ### `pileup skill` — promotion as a measured decision
 
 A skill costs nothing where it is *stored* and everything where it is
-*discoverable*. Tools like [piper](https://github.com/bygelo/piper) make
-that split explicit: a pool outside the discovery root is free, and a curated
-subset gets promoted into `~/.claude/skills` where its description bills on
-every turn, in every repo, forever.
+*discoverable*. Skill-pool managers make that split explicit: a pool kept
+outside the discovery root is free, and a curated subset gets promoted into
+`~/.claude/skills`, where its description bills on every turn, in every repo,
+forever.
 
 Promotion is therefore the one decision that spends always-on context — and it
-is almost always made on judgement. piper's own ledger says so: *"Promotion is
-judgment-driven for now (no automated gate)."*
+is almost always made on judgement. One such tool says so in its own promotion
+ledger: *"Promotion is judgment-driven for now (no automated gate)."*
 
 `pileup skill` is the evidence that gate needs:
 
@@ -155,7 +155,7 @@ judgment-driven for now (no automated gate)."*
 
 MEDIUM   8 of 18 discoverable skills have never fired, costing 742 tokens every turn
 MEDIUM   13 of 18 discoverable skills are not in the promotion ledger
-LOW      akonga-agentko-design and study-design describe overlapping triggers (29% shared)
+LOW      design-brand-a and design-brand-b describe overlapping triggers (29% shared)
 ```
 
 `fired` comes from actual `Skill` tool calls in local transcripts, so "unused" is
@@ -310,9 +310,10 @@ pileup is not the only tool in this space and does not try to be all of it.
 - **[context-viewer](https://github.com/auditt98/context-viewer)** — Python +
   real `tiktoken`, dollar costs, compaction timelines, an interactive view.
   Reach for it when you want a session microscope rather than a repo verdict.
-- **[piper](https://github.com/bygelo/piper)** — the prescriptive half:
+- **Skill-consolidation tooling** (piper and similar) — the prescriptive half:
   cache discipline, session handoff, context budgeting as a practice. pileup
-  produces the numbers those skills otherwise ask you to estimate.
+  produces the numbers those skills otherwise ask you to estimate, and
+  `pileup skill` is built to feed their promotion decisions.
 
 What pileup does that those don't: run the static and measured halves together
 and **report the gap between them**, then rank everything by cost × frequency

@@ -26,8 +26,9 @@ Initial cut. Built in one session, from an empty directory.
   always-on prefix taken from the smallest billed turn of each session.
 - **`pileup skill`** — per-skill always-on cost, invocation counts read from real
   `Skill` tool calls, entries missing from a promotion ledger, and colliding
-  description vocabularies. Built to supply the evidence piper's `promotions.json`
-  says it lacks: *"Promotion is judgment-driven for now (no automated gate)."*
+  description vocabularies. Built to supply the evidence a skill-pool
+  promotion ledger says it lacks: *"Promotion is judgment-driven for now (no
+  automated gate)."*
 - **`pileup mcp-cost`** — prices MCP servers by contrast across every repo on the
   machine, since tool schemas are invisible to a file scan.
 - **`pileup surface`** — every surface found, ungraded, as JSON.
