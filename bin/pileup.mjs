@@ -3,14 +3,21 @@
 
 import { resolve } from 'node:path'
 import { audit } from '../lib/audit.mjs'
-import { render, renderFinding, renderSession } from '../lib/report/text.mjs'
+import { auditSkill } from '../lib/skill.mjs'
+import { render, renderFinding, renderSession, renderSkill } from '../lib/report/text.mjs'
 
 const USAGE = `
 pileup -- audit what your coding agent actually reads
 
   pileup [audit] [path]     rank the repo's context surface by cost x frequency
   pileup session [path]     measured token spend from local session transcripts
+  pileup skill              what the skill discovery root costs, and what it earns
   pileup surface [path]     dump every surface pileup found, no grading
+
+skill options
+  --pool <dir>              skill pool outside the discovery root (default ~/.piper/skills-pool)
+  --ledger <file>           promotion ledger, e.g. piper's data/promotions.json
+  --root <dir>              audit one discovery root instead of all of them
 
 options
   --json                    machine-readable report on stdout
@@ -38,10 +45,26 @@ if (arg.includes('--help') || arg.includes('-h')) {
   process.exit(0)
 }
 
-const COMMAND = new Set(['audit', 'session', 'surface'])
+const COMMAND = new Set(['audit', 'session', 'surface', 'skill'])
 const command = COMMAND.has(arg[0]) ? arg.shift() : 'audit'
 
 const flag = parseFlag(arg)
+
+// `skill` audits the machine, not a repo -- promotion is a machine-wide decision.
+if (command === 'skill') {
+  const report = auditSkill({
+    pool: flag.pool,
+    ledger: flag.ledger,
+    root: flag.root,
+  })
+  if (flag.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
+  else {
+    process.stdout.write(renderSkill(report))
+    process.stdout.write(renderFinding(report.finding, { all: flag.all }))
+  }
+  process.exit(0)
+}
+
 const root = resolve(flag._[0] ?? process.cwd())
 
 const report = audit(root, {

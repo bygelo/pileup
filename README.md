@@ -80,9 +80,46 @@ CRITICAL docs/decisions.md is 327k tokens (33% of the window)
 pileup                     # audit the current repo
 pileup ~/some/repo         # audit somewhere else
 pileup session             # measured token spend from local session transcripts
+pileup skill               # what the skill discovery root costs, and what it earns
 pileup surface             # every surface pileup found, ungraded, as JSON
 pileup --json              # the full report, machine-readable
 ```
+
+### `pileup skill` — promotion as a measured decision
+
+A skill costs nothing where it is *stored* and everything where it is
+*discoverable*. Tools like [piper](https://github.com/bygelo/piper) make
+that split explicit: a pool outside the discovery root is free, and a curated
+subset gets promoted into `~/.claude/skills` where its description bills on
+every turn, in every repo, forever.
+
+Promotion is therefore the one decision that spends always-on context — and it
+is almost always made on judgement. piper's own ledger says so: *"Promotion is
+judgment-driven for now (no automated gate)."*
+
+`pileup skill` is the evidence that gate needs:
+
+```
+  skill                      tok/turn  fired  tracked
+  fanout                          262      1       no
+  parcel                          237      0       no
+  sync-docs                       176     23       no
+  dispatch                         88      0      yes
+  cache                            84      0      yes
+
+  18 distinct skills · 2.1k tokens every turn · 33 pooled at no cost
+  98 invocations across 360 transcripts
+
+MEDIUM   8 of 18 discoverable skills have never fired, costing 742 tokens every turn
+MEDIUM   13 of 18 discoverable skills are not in the promotion ledger
+LOW      akonga-agentko-design and study-design describe overlapping triggers (29% shared)
+```
+
+`fired` comes from actual `Skill` tool calls in local transcripts, so "unused" is
+measured rather than assumed — and pileup says nothing at all when there are no
+transcripts to read. Point it at a ledger with `--ledger` and a pool with
+`--pool`; it dedupes across discovery roots and never counts a skill parked in a
+`.disabled/` directory as billing.
 
 | option | |
 |---|---|

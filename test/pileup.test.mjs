@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { join } from 'node:path'
 
 import { audit } from '../lib/audit.mjs'
 import { estimateToken, formatToken } from '../lib/token.mjs'
@@ -150,6 +151,55 @@ test('output: prices the terseness trade from measured session data', async () =
 test('finding: info is a valid severity even though it ranks zero', () => {
   assert.doesNotThrow(() =>
     mkFinding({ id: 'x', severity: 'info', surface: 'cache', title: 't' }),
+  )
+})
+
+test('skill: dedupes across roots, ignores dot-dirs, and grades on measured firing', async () => {
+  const { auditSkill } = await import('../lib/skill.mjs')
+  const { skillRoot } = await import('./fixture.mjs')
+  const f = skillRoot()
+
+  const report = auditSkill({
+    root: f.root,
+    pool: f.pool,
+    ledger: f.ledger,
+    transcript: f.transcript,
+  })
+
+  const name = report.skill.map((s) => s.name).sort()
+  // `.disabled/` is how a tool parks a skill OUT of discovery -- it costs nothing.
+  assert.ok(!name.includes('parked'), 'dot-dirs must not be reported as billing')
+  assert.deepEqual(name, ['ghost', 'twin-a', 'twin-b', 'used'])
+
+  const used = report.skill.find((s) => s.name === 'used')
+  const ghost = report.skill.find((s) => s.name === 'ghost')
+  assert.equal(used.invoked, 3, 'invocations come from transcripts, not guesses')
+  assert.equal(ghost.invoked, 0)
+  assert.equal(used.tracked, true, 'the ledger decides tracked, not the name')
+  assert.equal(ghost.tracked, false)
+
+  const unused = report.finding.find((x) => x.id === 'skill-never-invoked')
+  assert.ok(unused, 'a skill that never fired is pure always-on rent')
+  assert.ok(unused.data.skill.some((s) => s.name === 'ghost'))
+  assert.ok(!unused.data.skill.some((s) => s.name === 'used'))
+
+  const collision = report.finding.find((x) => x.id === 'skill-collision')
+  assert.ok(collision, 'twin-a and twin-b share a trigger vocabulary')
+  assert.deepEqual(collision.data.pair.sort(), ['twin-a', 'twin-b'])
+
+  assert.ok(report.finding.some((x) => x.id === 'skill-untracked'))
+})
+
+test('skill: says nothing about firing when there are no transcripts to read', async () => {
+  const { auditSkill } = await import('../lib/skill.mjs')
+  const { skillRoot } = await import('./fixture.mjs')
+  const f = skillRoot()
+
+  const report = auditSkill({ root: f.root, pool: f.pool, transcript: join(f.root, 'nope') })
+  assert.equal(report.invocation.scanned, 0)
+  assert.ok(
+    !report.finding.some((x) => x.id === 'skill-never-invoked'),
+    'absence of transcripts is not evidence a skill is unused',
   )
 })
 

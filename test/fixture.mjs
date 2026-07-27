@@ -42,6 +42,40 @@ export function buildFixture() {
   return { root, bloated, lean }
 }
 
+/**
+ * A skill discovery root with the four cases that matter: one skill that fires,
+ * one that never has, two that collide, and one parked in a dot-dir where the
+ * harness will never see it.
+ */
+export function skillRoot() {
+  const base = mkdtempSync(join(tmpdir(), 'pileup-skill-'))
+  const root = join(base, 'root')
+  const pool = join(base, 'pool')
+  const transcript = join(base, 'transcript')
+
+  const skill = (dir, name, description) =>
+    write(dir, `${name}/SKILL.md`, `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n\nbody\n`)
+
+  skill(root, 'used', 'Deploy the service to production and roll back on failure.')
+  skill(root, 'ghost', 'Generate quarterly financial projections from ledger exports.')
+  skill(root, 'twin-a', 'Audit database migration scripts for destructive column drops before applying.')
+  skill(root, 'twin-b', 'Audit database migration scripts before applying, catching destructive drops.')
+  skill(join(root, '.disabled'), 'parked', 'Parked out of discovery; costs nothing.')
+  skill(pool, 'ghost', 'Generate quarterly financial projections from ledger exports.')
+
+  write(base, 'ledger.json', JSON.stringify({ promotions: [{ from: 'x-used', to: 'used' }] }))
+
+  // Three invocations of `used`, none of anything else.
+  const turn = (name) =>
+    JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', name: 'Skill', input: { skill: name } }] },
+    })
+  write(transcript, 'proj/session.jsonl', [turn('used'), turn('used'), turn('used')].join('\n'))
+
+  return { root, pool, transcript, ledger: join(base, 'ledger.json') }
+}
+
 const TIGHT =
   '---\nname: tight\ndescription: Split a doc into an index plus entries. Use when a doc exceeds the window. Skip for code.\n---\n\n# Tight\n\nDo the thing.\n'
 
