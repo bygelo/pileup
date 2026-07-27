@@ -152,8 +152,14 @@ the noise pileup exists to remove.
 
 pileup ships zero dependencies, so it cannot run the real BPE tokenizer. It
 estimates from character-class runs, which tracks tokenizer behaviour better
-than the usual `chars / 4` and lands within roughly 10% on markdown, code and
-JSON. That is accurate enough to rank surfaces, which is all it claims to do.
+than the usual `chars / 4`.
+
+**Those error bars are not yet measured.** On the one corpus where an
+independent hand-written reference exists, the estimator ran **5–13% high**.
+That is a sample of three files, not a calibration, and treating it as one would
+be exactly the kind of unverified number this tool exists to catch. Calibrating
+it properly is [a P0 item](ROADMAP.md). Until then, treat every estimate as a
+ranking signal rather than a measurement — ranking is all pileup needs it for.
 
 Two things are **measured, not estimated**:
 
@@ -174,12 +180,26 @@ There is no daemon, no telemetry upload, no config file, and nothing to log into
 It reads your repo and, if you ask for `session`, your local transcripts. Nothing
 leaves the machine.
 
-## Prior art it pairs with
+## Prior art
 
-pileup measures; it does not advise. For the prescriptive half — prompt-cache
-discipline, session handoff, context budgeting as a practice — see the skills in
-[piper](https://github.com/bygelo/piper). pileup produces the numbers
-those skills otherwise ask you to estimate.
+pileup is not the only tool in this space and does not try to be all of it.
+
+- **[ctxlint](https://github.com/YawLabs/ctxlint)** — asks whether your context
+  files are *true*: broken paths, commands that don't exist, stale references,
+  contradictions, leaked secrets. ~81 rules across 16 clients, also zero-dep and
+  `npx`-able. **Run it alongside pileup**; correctness and cost are different
+  axes and it is ahead of pileup on the first one.
+- **[context-viewer](https://github.com/auditt98/context-viewer)** — Python +
+  real `tiktoken`, dollar costs, compaction timelines, an interactive view.
+  Reach for it when you want a session microscope rather than a repo verdict.
+- **[piper](https://github.com/bygelo/piper)** — the prescriptive half:
+  cache discipline, session handoff, context budgeting as a practice. pileup
+  produces the numbers those skills otherwise ask you to estimate.
+
+What pileup does that those don't: run the static and measured halves together
+and **report the gap between them**, then rank everything by cost × frequency
+rather than by rule count. On the reference repo that gap was 218,000 tokens per
+turn, and neither half alone can see it.
 
 ## License
 
