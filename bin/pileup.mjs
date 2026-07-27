@@ -19,6 +19,7 @@ pileup -- audit what your coding agent actually reads
   pileup [audit] [path]     rank the repo's context surface by cost x frequency
   pileup session [path]     measured token spend from local session transcripts
   pileup skill              what the skill discovery root costs, and what it earns
+  pileup mcp-cost           price MCP servers by contrast across all your repos
   pileup surface [path]     dump every surface pileup found, no grading
 
 skill options
@@ -42,6 +43,7 @@ collectors
   prefix      hooks and churn that invalidate the prompt cache
   doc         large files an agent could open whole
   session     what the API actually billed
+  output      output-token share, and what a terseness skill is worth here
 
 pileup reports and prescribes. It never edits your repo.
 `
