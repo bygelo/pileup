@@ -9,7 +9,9 @@ Run it, read the top of the report, act on the always-on findings first.
 
 ```sh
 npx pileup                 # audit this repo
-npx pileup session         # measured spend from local transcripts
+npx pileup session         # measured spend from local transcripts (Claude + Codex)
+npx pileup skill           # what the skill discovery root costs, and what it earns
+npx pileup mcp-cost        # price MCP servers by contrast across all repos
 npx pileup --json          # for further analysis
 ```
 
@@ -49,6 +51,20 @@ is rarely the biggest line in the audit.
 ## The gap
 
 If `pileup session` reports a much larger prefix than the static estimate, the
-difference is the harness system prompt plus MCP tool schemas. Disconnect
-servers this repo does not use and re-measure — that gap is often the single
-largest line in the whole audit.
+difference is the harness system prompt plus MCP tool schemas. That gap is
+usually the single largest line in the whole audit.
+
+`pileup mcp-cost` attributes it, by comparing repos that declare a server against
+repos that don't. Read its refusals as carefully as its numbers: servers that
+always appear together are priced as a **set**, a set used in one repo is called
+an anecdote, and a globally-configured server is called unpriceable because it
+has no comparison group. A zero also means "declared but never connected" just as
+often as it means "carries no schemas".
+
+## Promotion is the expensive decision
+
+A skill costs nothing where it is stored and everything where it is
+*discoverable*. `pileup skill` reports what each promoted skill costs per turn
+and how often it has actually fired, so promotion can be made on evidence.
+Demote a skill that never fires — it can still be invoked explicitly, and outside
+the discovery root it costs nothing.

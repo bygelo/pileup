@@ -171,6 +171,13 @@ transcripts to read. Point it at a ledger with `--ledger` and a pool with
 | `--only a,b` / `--skip a,b` | pick collectors |
 | `--all` | include info-level findings |
 | `--sessions <n>` | how many recent sessions to read (default `20`) |
+| `--pool` / `--ledger` / `--root` | `pileup skill` only — see below |
+
+pileup reads no config file and exactly one environment variable:
+
+| env | |
+|---|---|
+| `NO_COLOR` | set to any value to disable ANSI colour ([no-color.org](https://no-color.org)). Colour is also off automatically when stdout is not a TTY. |
 
 ## Collectors
 
@@ -217,6 +224,16 @@ money is, and it is not the one with the landing page.
 pileup detects Claude Code, Codex, Cursor, GitHub Copilot, Gemini CLI, Windsurf
 and Aider. The only thing that differs between them is *where they keep their
 files*; every analysis downstream is shared.
+
+**Claude Code and Codex are the two that have been exercised** — against real
+repos and real transcripts. The other five adapter rows are declared paths that
+no test or real run has yet confirmed. Treat them as best-effort and report
+anything wrong; the fix is a one-line table edit.
+
+Session-level findings need a transcript format pileup can read, which today
+means Claude Code (`~/.claude/projects`) and Codex (`~/.codex/sessions`). For
+other harnesses the static half still works and the session half reports nothing
+rather than guessing.
 
 Always-on cost is reported **per harness, never summed** — only one runs at a
 time, and adding them would describe a session nobody has.
@@ -301,6 +318,23 @@ What pileup does that those don't: run the static and measured halves together
 and **report the gap between them**, then rank everything by cost × frequency
 rather than by rule count. On the reference repo that gap was 218,000 tokens per
 turn, and neither half alone can see it.
+
+## Contributing
+
+```sh
+npm test          # 17 tests, node:test, no install step
+```
+
+Fixtures are **generated into a temp dir at test time, never committed** — a repo
+whose point is "stop committing 600 KB decisions logs" should not ship one.
+
+Two constraints worth knowing before opening a PR: **zero dependencies** (it is
+why `npx pileup` works with no install), and **no writes to the audited repo**.
+Both are load-bearing, not incidental.
+
+Shipped history is in [CHANGELOG.md](CHANGELOG.md); planned work and known gaps
+are in [ROADMAP.md](ROADMAP.md), including a rejections log so settled arguments
+stay settled.
 
 ## License
 

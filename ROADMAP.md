@@ -4,7 +4,11 @@ Living document. Edited honestly — gaps are gaps, not opportunities.
 
 ## Status
 
-v0.1.0. Seven collectors, zero dependencies, 11 tests green. Audits itself clean.
+v0.1.0. Five commands, seven collectors, zero dependencies, 17 tests green. Audits
+itself clean. **P0 and P1 are closed**; what remains is one P2 row, one blocked
+research item, and the test-coverage and CI gaps recorded in Triage.
+
+Shipped history is in [CHANGELOG.md](CHANGELOG.md); this file is forward-looking only.
 
 Discovery for this roadmap found **seven mature sibling tools already in this
 space** ([ctxlint], [context-viewer], [context-analyzer], [claude-crusts],
@@ -79,10 +83,33 @@ Full reasons in [docs/roadmap-rejected.md](docs/roadmap-rejected.md).
 | Bundling a real tokenizer | Breaks the zero-dependency distribution story, which is the reason `npx pileup` works with no install. |
 | MCP schema trimming or proxying | That is a runtime component. pileup is an auditor and does not sit in the request path. |
 
+## Test-coverage gaps
+
+Measured 2026-07-27 by cross-checking every `mkFinding` id in `lib/` against the ids
+asserted in `test/`: **19 of 32 covered (59%)**. Not a line-coverage number — for this
+codebase the meaningful unit is "does a finding have a test that proves it fires".
+
+The uncovered ids, and why each is unproven:
+
+| Uncovered finding | Why it has no test |
+|---|---|
+| `session-measured-prefix`, `session-low-cache-hit`, `session-model-switch`, `session-heavy-tool-result`, `session-compaction` | Session findings were validated against real local transcripts, never against a fixture. They are the most-cited numbers in the report and the least defended. **Highest-value gap.** |
+| `prefix-gap` | Needs a fixture pairing a static surface with transcripts, which no fixture builds yet. |
+| `definition-description-total`, `definition-fat-body`, `definition-no-description` | The bloated fixture triggers `definition-fat-description` only. |
+| `doc-total-exposure`, `doc-more-trap` | Both are rollups that need more oversized files than the fixture creates. |
+| `prefix-volatile-memory` | Requires a fixture repo with real git history. |
+| `skill-pool-ratio` | Informational; fires whenever a pool exists. |
+
+Closing this is a **T3** item: PASS iff every `mkFinding` id in `lib/` appears in a test
+assertion, checkable with the same cross-check that produced this table. Worth doing as
+one batch rather than a roadmap row per finding.
+
 ## Triage
 
 | Item | What is blocking |
 |---|---|
+| No CI | The repo has no `.github/workflows`. `npm test` is self-contained and needs no local state, so this is a small job — it just hasn't been done. |
+| Five adapter rows are unexercised | Cursor, Copilot, Gemini, Windsurf and Aider paths are declared in [lib/adapter.mjs](lib/adapter.mjs) but no test or real run has confirmed them. Needs either fixtures per harness or an honest downgrade of the claim in the README. |
 | Tokenizer ground-truth calibration | Needs an Anthropic API key for `count_tokens`, or a corpus with authoritative counts committed once. Decide which. |
 | Whether pileup becomes a piper pipeline stage or stays standalone | Product decision. Standalone keeps the open-source story clean; a stage gets promotion-gating for free. Not resolvable from the code. |
 | Whether the 30% prose-share constant in [lib/collector/output.mjs](lib/collector/output.mjs) holds | Taken from published terseness-skill measurements, not from these transcripts. Measurable by classifying output blocks as prose vs code, but that needs a classifier pileup does not have. |
