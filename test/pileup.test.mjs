@@ -121,6 +121,38 @@ test('audit: one broken collector does not take the run with it', () => {
   assert.equal(report.error.length, 0)
 })
 
+test('output: prices the terseness trade from measured session data', async () => {
+  const { collect } = await import('../lib/collector/output.mjs')
+
+  // 100 turns, 1.5k output each, on a big cached prefix -- the shape of a real
+  // coding session, where input dominates by an order of magnitude.
+  const ctx = {
+    surface: {
+      session: [
+        { turn: 100, output: 150_000, cacheRead: 20_000_000, cacheCreate: 500_000, input: 1_000 },
+      ],
+    },
+  }
+  const { finding, surface } = collect(ctx)
+
+  assert.equal(surface[0].perTurn, 1500)
+  const trade = finding.find((f) => f.id === 'output-terseness-tradeoff')
+  assert.ok(trade, 'expected the terseness trade to be priced')
+  assert.ok(trade.data.outputShare > 0 && trade.data.outputShare < 1)
+  // Only prose shrinks, so recoverable is always a fraction of the output share.
+  assert.ok(trade.data.recoverableShare < trade.data.outputShare)
+  assert.ok(finding.some((f) => f.id === 'output-verbose'))
+
+  // No transcripts means no claim, rather than a guess.
+  assert.deepEqual(collect({ surface: {} }).finding, [])
+})
+
+test('finding: info is a valid severity even though it ranks zero', () => {
+  assert.doesNotThrow(() =>
+    mkFinding({ id: 'x', severity: 'info', surface: 'cache', title: 't' }),
+  )
+})
+
 test('audit: always-on is reported per harness, never summed across them', () => {
   const report = auditFixture('bloated')
   assert.ok(Array.isArray(report.alwaysOn.byHarness))

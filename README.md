@@ -105,6 +105,32 @@ partial audit is still worth reading.
 | **prefix** | hooks that rewrite the prefix mid-session, and memory files churning hard enough to keep invalidating the cache. |
 | **doc** | large files an agent could open whole. Escalates when a memory file points at one, because then the repo is not merely exposed to the risk — it is directing the agent into it. |
 | **session** | what the API actually billed. The only numbers here that are not estimates. |
+| **output** | the other side of the bill. Output tokens cost ~5x an input token, which is why terseness skills are popular — this prices that trade against your own sessions instead of a blog post's. |
+
+### On terseness skills
+
+The most popular answer to "my sessions cost too much" is a terseness skill —
+[caveman](https://github.com/juliusbrussee/caveman) and its relatives — which
+cut discursive output by around 65%.
+
+pileup does not tell you to install one. It tells you what it is worth:
+
+```
+INFO     output is 9.3% of billed cost; a terseness skill could recover about 1.8%
+         on invoke
+         1.4M output tokens against 47M input-equivalent. Terseness skills cut discursive
+         text by roughly two thirds, but generated code, diffs and tool arguments are
+         untouched and are most of what a coding agent emits.
+         fix: The trade pays off as long as the skill adds less than about 9.8k tokens of
+         cached always-on context per turn, which most of them clear comfortably -- so
+         install one if you like the style. Just rank it honestly: it is worth 1.8%, and
+         the always-on findings above are usually worth more.
+```
+
+That is a real audit of a real repo. The skill is net-positive and worth having.
+It is also worth 1.8%, while the always-on prefix in the same repo was worth
+223,000 tokens **per turn**. Both facts are true; only one of them is where the
+money is, and it is not the one with the landing page.
 
 ## Harnesses
 

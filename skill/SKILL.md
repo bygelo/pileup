@@ -40,6 +40,12 @@ fires, so an unused skill still bills.
 small index the memory file points at. The agent then opens the index and one
 entry instead of the archive.
 
+**Price a terseness skill before installing it.** Output bills ~5x input, so
+cutting prose helps — but prose is a minority of a coding session and the skill
+charges always-on context forever to do it. pileup computes the break-even from
+your own sessions. It is usually worth a few percent, which is worth having and
+is rarely the biggest line in the audit.
+
 ## The gap
 
 If `pileup session` reports a much larger prefix than the static estimate, the
