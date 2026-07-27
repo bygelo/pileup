@@ -121,6 +121,55 @@ export function mcpMachine() {
   return { transcript, config }
 }
 
+/**
+ * A Codex rollout transcript for one repo.
+ *
+ * Deliberately encodes the trap: `input_tokens` is the WHOLE prompt and
+ * `cached_input_tokens` is a subset of it, unlike Claude where the two are
+ * disjoint. A reader that adds them reports more cache than there was prompt.
+ * Also logs each compaction twice, exactly as Codex does.
+ */
+export function codexMachine() {
+  const base = mkdtempSync(join(tmpdir(), 'pileup-codex-'))
+  const cwd = join(base, 'repo')
+  const sessions = join(base, 'sessions')
+  write(cwd, 'AGENTS.md', '# AGENTS\n\nBuild: npm run build.\n')
+
+  const line = []
+  line.push(JSON.stringify({ type: 'session_meta', payload: { cwd, model: 'gpt-x' } }))
+
+  const turn = (prompt, cached) =>
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          last_token_usage: {
+            input_tokens: prompt,
+            cached_input_tokens: cached,
+            cache_write_input_tokens: 0,
+            output_tokens: 500,
+            reasoning_output_tokens: 200,
+          },
+          model_context_window: 258_400,
+        },
+        rate_limits: { primary: { used_percent: 94, window_minutes: 10_080 }, plan_type: 'pro' },
+      },
+    })
+
+  line.push(turn(20_000, 12_000)) // opening turn -> the prefix
+  line.push(turn(60_000, 55_000)) // later, larger turn
+
+  // One compaction, logged as both a record and an event.
+  line.push(JSON.stringify({ type: 'compacted', payload: { message: '' } }))
+  line.push(JSON.stringify({ type: 'event_msg', payload: { type: 'context_compacted' } }))
+
+  write(sessions, '2026/07/26/rollout-2026-07-26T20-22-01-019f9e60-06f1-7f01-b164-fe5e7025dd47.jsonl',
+    line.join('\n'))
+
+  return { cwd, home: base, codexDir: sessions }
+}
+
 const TIGHT =
   '---\nname: tight\ndescription: Split a doc into an index plus entries. Use when a doc exceeds the window. Skip for code.\n---\n\n# Tight\n\nDo the thing.\n'
 

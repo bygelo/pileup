@@ -252,6 +252,59 @@ test('mcp-cost: refuses to contrast too few repos', async () => {
   assert.match(report.note, /at least 4/)
 })
 
+test('codex: normalises subset-cached tokens instead of double-counting them', async () => {
+  const { discoverTranscript, readTranscript } = await import('../lib/transcript.mjs')
+  const { codexMachine } = await import('./fixture.mjs')
+  const m = codexMachine()
+
+  const found = discoverTranscript(m.cwd, { home: m.home, codexDir: m.codexDir, claudeDir: join(m.home, 'none') })
+  assert.equal(found.length, 1, 'discovered by the cwd in session_meta, not by path layout')
+  assert.equal(found[0].harness, 'codex')
+
+  const s = readTranscript(found[0])
+  assert.equal(s.turn, 2)
+  assert.equal(s.id, '019f9e60', 'the uuid, not the rollout- timestamp prefix')
+
+  // Codex: input_tokens is the whole prompt, cached_input_tokens a subset.
+  // Normalised, the parts must sum back to the prompts: 20k + 60k.
+  assert.equal(s.cacheRead, 12_000 + 55_000)
+  assert.equal(s.input, 8_000 + 5_000)
+  assert.equal(s.cacheRead + s.input + s.cacheCreate, 80_000)
+
+  const hit = s.cacheRead / (s.cacheRead + s.input + s.cacheCreate)
+  assert.ok(hit > 0 && hit <= 1, `hit rate must stay a proportion, got ${hit}`)
+
+  // The prefix is the smaller turn, and reasoning tokens are already inside output.
+  assert.equal(s.prefixToken, 20_000)
+  assert.equal(s.output, 1_000)
+
+  // Logged twice by Codex, counted once by pileup.
+  assert.equal(s.compaction, 1)
+
+  assert.equal(s.window, 258_400)
+  assert.equal(s.quota.usedPercent, 94)
+  assert.equal(s.quota.plan, 'pro')
+})
+
+test('codex: surfaces the real window and the measured subscription quota', async () => {
+  const { collect } = await import('../lib/collector/session.mjs')
+  const { codexMachine } = await import('./fixture.mjs')
+  const m = codexMachine()
+
+  const { finding } = collect({
+    root: m.cwd,
+    home: m.home,
+    codexDir: m.codexDir,
+    claudeDir: join(m.home, 'none'),
+    window: 200_000,
+  })
+  const id = (x) => finding.find((f) => f.id === x)
+
+  assert.match(id('session-window-mismatch').title, /258k/)
+  assert.match(id('session-quota').title, /94%.*1-week.*pro/)
+  assert.equal(id('session-quota').severity, 'high')
+})
+
 test('audit: always-on is reported per harness, never summed across them', () => {
   const report = auditFixture('bloated')
   assert.ok(Array.isArray(report.alwaysOn.byHarness))

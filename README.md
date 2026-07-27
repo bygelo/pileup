@@ -184,7 +184,7 @@ partial audit is still worth reading.
 | **mcp** | configured servers. Every server's tool schemas ride every turn. |
 | **prefix** | hooks that rewrite the prefix mid-session, and memory files churning hard enough to keep invalidating the cache. |
 | **doc** | large files an agent could open whole. Escalates when a memory file points at one, because then the repo is not merely exposed to the risk — it is directing the agent into it. |
-| **session** | what the API actually billed. The only numbers here that are not estimates. |
+| **session** | what the API actually billed, from Claude Code and Codex transcripts. The only numbers here that are not estimates. |
 | **output** | the other side of the bill. Output tokens cost ~5x an input token, which is why terseness skills are popular — this prices that trade against your own sessions instead of a blog post's. |
 
 ### On terseness skills
@@ -241,10 +241,31 @@ be exactly the kind of unverified number this tool exists to catch. Calibrating
 it properly is [a P0 item](ROADMAP.md). Until then, treat every estimate as a
 ranking signal rather than a measurement — ranking is all pileup needs it for.
 
-Two things are **measured, not estimated**:
+These are **measured, not estimated**:
 
 - everything under `pileup session`, which reads what the API billed
 - the always-on prefix, taken from the smallest billed turn of each session
+- on Codex, the real context window and **the subscription quota actually spent** —
+  `rate_limits.primary.used_percent` is the provider's own count, so no estimate
+  can improve on it:
+
+```
+HIGH     subscription quota at 100% of its 1-week window (pro)
+         Read straight from the transcript, so this is what the provider actually
+         counted. On a subscription the always-on prefix is the dominant term: it
+         is re-sent every turn whether or not the turn needed it.
+
+MEDIUM   52 compactions across 20 sessions
+         Compacting discards the cached prefix; the next turn rebuilds it at
+         cache-write price -- roughly 21k tokens rewritten per compaction here.
+```
+
+The two harnesses disagree about what "input tokens" means, and getting it wrong
+is silent: Claude's `input` / `cache_read` / `cache_creation` are **disjoint**,
+while Codex's `input_tokens` is the **whole prompt** with `cached_input_tokens`
+as a subset of it. Adding Codex's the way you add Claude's reports more cache
+than there was prompt. [lib/transcript.mjs](lib/transcript.mjs) normalises both
+to the disjoint form so every downstream number means one thing.
 
 Everything else is an estimate and the report says so. When pileup cannot see
 something — MCP tool schemas, which need the servers running — it reports the
