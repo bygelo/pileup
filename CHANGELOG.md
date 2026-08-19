@@ -6,7 +6,7 @@ versions follow [semver](https://semver.org/spec/v2.0.0.html).
 Current state — what pileup is and how to run it — lives in [README.md](README.md).
 Planned work lives in [ROADMAP.md](ROADMAP.md). This file is history only.
 
-## [Unreleased]
+## [0.2.0] — 2026-08-19
 
 Two halves. The first is a correctness pass forced by changes to Claude Code in
 July 2026 — three of pileup's shipped claims had stopped being true, and one was
@@ -253,4 +253,5 @@ Initial cut. Built in one session, from an empty directory.
 - Cursor, Copilot, Gemini, Windsurf and Aider adapter rows are **unexercised** — the
   paths are declared but no test or real run has confirmed them.
 
+[0.2.0]: https://github.com/bygelo/pileup/releases/tag/v0.2.0
 [0.1.0]: https://github.com/bygelo/pileup/releases/tag/v0.1.0

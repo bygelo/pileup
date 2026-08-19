@@ -4,10 +4,11 @@ Living document. Edited honestly — gaps are gaps, not opportunities.
 
 ## Status
 
-v0.1.0 plus an unreleased correctness pass and `pileup fleet`. **Six commands**,
-seven collectors, zero dependencies, **25 tests green**. Audits
+v0.2.0 — the correctness pass and `pileup fleet` are released. **Six commands**,
+seven collectors, zero dependencies, **27 tests green**. Audits
 itself clean. **P0 and P1 are closed**; what remains is one P2 row, one blocked
-research item, and the test-coverage and CI gaps recorded in Triage.
+research item, and the test-coverage gap recorded in Triage. CI landed with this
+release.
 
 **A new standing risk, added 2026-07-30.** The correctness pass above existed
 because the harness moved and pileup did not: three shipped claims had quietly
