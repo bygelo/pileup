@@ -6,6 +6,39 @@ versions follow [semver](https://semver.org/spec/v2.0.0.html).
 Current state — what pileup is and how to run it — lives in [README.md](README.md).
 Planned work lives in [ROADMAP.md](ROADMAP.md). This file is history only.
 
+## [Unreleased]
+
+### Added
+
+- **`pileup --format md`.** The last open P2 row. Findings were terminal or raw JSON
+  only, which meant a finding you had to convince somebody else about could be shared
+  only as a screenshot of a terminal. [lib/report/markdown.mjs](lib/report/markdown.mjs)
+  is a second view over the same report object — not a second report — and it sections
+  by **surface** rather than severity, so the cost x frequency ordering that is the
+  whole thesis survives into the headings. Covers `audit` and `fleet`; the other
+  commands exit 1 with a message rather than silently printing the terminal view, because
+  a format flag that quietly does nothing is worse than one that says no.
+
+- **`npm run coverage` — which findings are proven to fire.** The ROADMAP had quoted a
+  hand-typed "28 of 45" for weeks; the real number was 30 of 46, and it went stale the
+  moment anyone added a finding. [test/finding-coverage.mjs](test/finding-coverage.mjs)
+  cross-checks every `mkFinding` id in `lib/` against the ids named in `test/`, runs
+  inside `npm test`, and carries a **ratchet floor** so the only honest way to make a
+  failing run pass is to add a test. Lowering the floor is a one-line edit that shows up
+  in review as exactly what it is.
+
+### Fixed
+
+- **The five `session-*` findings are asserted against something committed.** They are
+  the most-cited numbers pileup prints — a measured prefix, a measured cache ratio — and
+  until now the only evidence they fired was a run on one laptop. Real transcripts are
+  not a test: they are somebody's machine, they change, and they cannot be asserted on.
+  `expensiveSession()` is one session that is expensive four ways at once (25% cache-read
+  ratio, two models, two 31k-token reads of the same file, two compactions), deliberately
+  one session rather than four because the collector groups by call site and medians
+  across sessions — a one-finding-per-fixture layout would never reach that code.
+  Coverage 30/46 → **34/46 (74%)**.
+
 ## [0.2.1] — 2026-08-19
 
 ### Fixed

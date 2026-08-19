@@ -14,6 +14,7 @@ import {
   renderSession,
   renderSkill,
 } from '../lib/report/text.mjs'
+import { renderFleetMarkdown, renderMarkdown } from '../lib/report/markdown.mjs'
 
 const USAGE = `
 pileup -- audit what your coding agent actually reads
@@ -37,6 +38,7 @@ skill options
 
 options
   --json                    machine-readable report on stdout
+  --format md               markdown report on stdout (audit and fleet only)
   --window <n>              context window to measure against (default 200000)
   --no-user                 ignore the user-global surface (~/.claude, ~/.codex)
   --only <a,b>              run only these collectors
@@ -71,9 +73,24 @@ if (arg.includes('--help') || arg.includes('-h')) {
 }
 
 const COMMAND = new Set(['audit', 'fleet', 'session', 'surface', 'skill', 'mcp-cost'])
+// `--format md` covers the two whole-report commands. The rest would need their
+// own renderer, and a flag that silently falls back to the terminal view is
+// worse than one that says no.
+const MD_COMMAND = new Set(['audit', 'fleet'])
 const command = COMMAND.has(arg[0]) ? arg.shift() : 'audit'
 
 const flag = parseFlag(arg)
+
+if (flag.format && flag.format !== 'md') {
+  process.stderr.write(`pileup: unknown --format '${flag.format}'; the only format is md\n`)
+  process.exitCode = 1
+  return
+}
+if (flag.format === 'md' && !MD_COMMAND.has(command)) {
+  process.stderr.write(`pileup: --format md is not implemented for \`${command}\`; use --json\n`)
+  process.exitCode = 1
+  return
+}
 
 // `fleet` takes directories to search rather than one repo, because the whole
 // point is that a document's cost is spread across repos.
@@ -88,6 +105,7 @@ if (command === 'fleet') {
     sessionLimit: flag.sessions ? Number(flag.sessions) : undefined,
   })
   if (flag.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
+  else if (flag.format === 'md') process.stdout.write(renderFleetMarkdown(report, { all: flag.all }))
   else if (!report.item.length) process.stdout.write(`\n  ${report.note ?? 'nothing to report'}\n\n`)
   else {
     process.stdout.write(renderFleet(report))
@@ -137,6 +155,8 @@ const report = audit(root, {
 
 if (flag.json) {
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
+} else if (flag.format === 'md') {
+  process.stdout.write(renderMarkdown(report, { all: flag.all }))
 } else if (command === 'session') {
   const surface = report.surface.session ?? []
   if (!surface.length) {

@@ -85,7 +85,13 @@ pileup skill               # what the skill discovery root costs, and what it ea
 pileup mcp-cost            # price MCP servers by contrast across all your repos
 pileup surface             # every surface pileup found, ungraded, as JSON
 pileup --json              # the full report, machine-readable
+pileup --format md         # markdown, for a PR comment or a committed doc
 ```
+
+`--format md` renders the same report as the terminal view, sectioned by **surface**
+rather than by severity — so the cost x frequency ordering that is the whole thesis
+survives into the headings. It covers `audit` and `fleet`; the other commands refuse
+the flag rather than silently printing the terminal view at you.
 
 ### `pileup fleet` — one row per document, not per repo
 

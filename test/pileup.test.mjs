@@ -10,7 +10,7 @@ import { gradeBy, mkFinding, rankFinding } from '../lib/finding.mjs'
 import { expandPattern } from '../lib/fs.mjs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { bigReportRepo, buildFixture } from './fixture.mjs'
+import { bigReportRepo, buildFixture, expensiveSession } from './fixture.mjs'
 
 const built = buildFixture()
 const fixture = (name) => built[name]
@@ -670,4 +670,45 @@ test('cli: a report larger than the pipe buffer survives being piped', () => {
   // at exactly 65,536 bytes, so every consumer that piped pileup got a fragment.
   const report = JSON.parse(out)
   assert.equal(report.tool, 'pileup')
+})
+
+
+// The four session findings that had never been asserted against anything
+// committed. They are the most-cited numbers in the report -- a measured prefix,
+// a measured cache ratio -- and until now the only evidence they fired was a run
+// on somebody's laptop.
+test('session: the four cost findings fire, and say which habit caused each', async () => {
+  const { collect } = await import('../lib/collector/session.mjs')
+  const f = expensiveSession()
+  const out = collect({ root: f.cwd, home: f.home, claudeDir: f.claudeDir })
+  const id = (name) => out.finding.find((x) => x.id === name)
+
+  const cache = id('session-low-cache-hit')
+  assert.ok(cache, 'a 25% cache-read ratio must be reported')
+  assert.equal(cache.severity, 'high', 'under the 50% floor is high, not a nudge')
+  assert.match(cache.title, /25%/)
+
+  const model = id('session-model-switch')
+  assert.ok(model, 'two models in one session must be reported')
+  assert.deepEqual(model.data.model, f.model)
+
+  const heavy = id('session-heavy-tool-result')
+  assert.ok(heavy, 'a 25k+ token tool result must be reported')
+  // Grouped by call site, not repeated per occurrence -- the finding is meant to
+  // name a habit, and two reads of the same file is exactly that.
+  assert.equal(heavy.data.call, 2)
+  assert.equal(heavy.data.tool, 'Read')
+  assert.match(heavy.title, /decisions\.md/)
+
+  const compact = id('session-compaction')
+  assert.ok(compact, 'two compactions must be reported')
+  assert.equal(compact.data.compaction, 2)
+  assert.ok(compact.data.token > 0, 'compaction cost is the rewritten prefix, not just a count')
+})
+
+test('session: one compaction is not a habit, and is not reported', async () => {
+  const { collect } = await import('../lib/collector/session.mjs')
+  const f = expensiveSession()
+  const out = collect({ root: f.cwd, home: f.home, claudeDir: f.claudeDir, sessionLimit: 0 })
+  assert.deepEqual(out.finding, [], 'reading zero sessions must claim nothing at all')
 })

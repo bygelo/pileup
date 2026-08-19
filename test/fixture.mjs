@@ -395,3 +395,77 @@ export function bigReportRepo(count = 400) {
   }
   return root
 }
+
+/**
+ * One session that is expensive in four different ways at once.
+ *
+ * The session findings were the most-cited numbers pileup prints and the least
+ * defended: validated once against real local transcripts, never against
+ * anything committed. Real transcripts are not a test — they are somebody's
+ * machine, they change, and they cannot be asserted on. This fixture is the
+ * committed version of that validation.
+ *
+ * Deliberately one session rather than four, because the collector groups and
+ * medians across sessions and a one-finding-per-fixture layout would never
+ * exercise that.
+ */
+export function expensiveSession() {
+  const base = mkdtempSync(join(tmpdir(), 'pileup-expensive-'))
+  const cwd = join(base, 'repo')
+  const projects = join(base, 'projects')
+  write(cwd, 'CLAUDE.md', '# repo\n\nSmall memory file; the cost here is all in the session.\n')
+
+  // Cache reads bill at a tenth of input, so this ratio is the whole finding:
+  // 120k written, 30k read back = 20%, which is under the 50% `high` floor.
+  const turn = (model, cacheRead, cacheCreate) =>
+    JSON.stringify({
+      type: 'assistant',
+      cwd,
+      message: {
+        model,
+        usage: { cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheCreate, input_tokens: 0 },
+      },
+    })
+
+  // A tool call and the result it produced, as two records the parser pairs by id.
+  const bigRead = (id, target, char) => [
+    JSON.stringify({
+      type: 'assistant',
+      cwd,
+      message: {
+        model: MODEL_A,
+        // A real assistant record always carries usage, and the parser keys the
+        // tool_use branch off it -- without it the result pairs to nothing and
+        // the finding reports "unknown on an unnamed target".
+        usage: { cache_read_input_tokens: 5_000, cache_creation_input_tokens: 0, input_tokens: 0 },
+        content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: target } }],
+      },
+    }),
+    JSON.stringify({
+      type: 'user',
+      cwd,
+      message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'x'.repeat(char) }] },
+    }),
+  ]
+
+  const compaction = JSON.stringify({ type: 'system', cwd, subtype: 'compact_boundary' })
+
+  const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-')
+  write(projects, `${slug}/expensive.jsonl`, [
+    // Two turns before the first compaction, so there is a prefix to median.
+    turn(MODEL_A, 10_000, 40_000),
+    turn(MODEL_A, 10_000, 40_000),
+    ...bigRead('call-1', '/repo/docs/decisions.md', 140_000),
+    ...bigRead('call-2', '/repo/docs/decisions.md', 140_000),
+    compaction,
+    // Same session, different model: each model keeps its own cache.
+    turn(MODEL_B, 10_000, 40_000),
+    compaction,
+    turn(MODEL_B, 0, 0),
+  ].join('\n'))
+
+  return { cwd, home: base, claudeDir: projects, model: [MODEL_A, MODEL_B] }
+}
+
+const MODEL_A = 'claude-opus-5'
+const MODEL_B = 'claude-sonnet-5'

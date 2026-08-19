@@ -5,10 +5,10 @@ Living document. Edited honestly — gaps are gaps, not opportunities.
 ## Status
 
 v0.2.1 — the correctness pass and `pileup fleet` are released. **Six commands**,
-seven collectors, zero dependencies, **28 tests green**. Audits
-itself clean. **P0 and P1 are closed**; what remains is one P2 row, one blocked
-research item, and the test-coverage gap recorded in Triage. CI landed with this
-release.
+seven collectors, zero dependencies, **30 tests green**, **74% finding coverage**. Audits
+itself clean. **P0, P1 and P2 are closed**; what remains is one blocked research
+item and the finding-coverage tail, which now has a runnable ratchet rather than a
+hand-typed number.
 
 **A new standing risk, added 2026-07-30.** The correctness pass above existed
 because the harness moved and pileup did not: three shipped claims had quietly
@@ -80,7 +80,7 @@ win the halves outright.
 | **Report compaction as a cost event** | Session parsing ignored compaction entirely. Each compact discards the cached prefix and rebuilds it at cache-write price, and `/compact` discipline is one of the most-repeated community recommendations. **Measured: 52 compactions across 20 sessions in one repo, ~21k rewritten each.** | `pileup session` | ~3h | **T3** — PASS iff a session with ≥2 compactions reports the count and the tokens attributable to them, counting a Codex compaction once despite it being logged twice. | ✅ **done 2026-07-27** |
 | **Surface measured subscription quota** | Not in the original sweep — found while reading the Codex format. Codex transcripts carry `rate_limits.primary.used_percent`, the provider's own count of how much of the plan window is spent. That is ground truth for the subscription half of pileup's premise, and no estimate can substitute for it. **Measured 100% of a 1-week pro window on this machine.** | `pileup session` | ~1h | **T3** — PASS iff a repo with Codex transcripts reports the used percentage, its window length and the plan, and Claude-only repos report nothing rather than guessing. | ✅ **done 2026-07-27** |
 | **Use the reported context window** | Also found mid-build. Codex records `model_context_window`, so pileup no longer has to assume 200k when the transcript states otherwise. | `pileup session` | ~30m | **T3** — PASS iff a mismatch between the assumed and reported window is reported with the exact `--window` value to re-run with. | ✅ **done 2026-07-27** |
-| **Markdown report output** | Findings are terminal or raw JSON only. A repo that wants this in a PR comment or a doc has to write the formatter. `data` payloads were built for diffing runs ([lib/finding.mjs](lib/finding.mjs)) but nothing consumes them. | `pileup --format md` | ~2h | **T3** — `pileup --format md > out.md`; PASS iff the file renders as valid markdown with one section per surface. Currently fails — flag unrecognized. | 🔴 open |
+| **Markdown report output** | Findings were terminal or raw JSON only, so a finding you had to convince somebody else about could only be shared as a screenshot of a terminal. [lib/report/markdown.mjs](lib/report/markdown.mjs) is a second view over the same report object, sectioned by **surface** rather than severity so the cost×frequency ordering survives into the headings. Covers `audit` and `fleet`; refuses the other commands rather than silently printing the terminal view. | `pileup --format md` | ~2h | **T3** — `pileup --format md > out.md`; PASS iff the file renders as valid markdown with one section per surface. | ✅ **done 2026-08-19** |
 
 ## P3 — Research
 
@@ -105,32 +105,45 @@ Full reasons in [docs/roadmap-rejected.md](docs/roadmap-rejected.md).
 
 ## Test-coverage gaps
 
-Measured 2026-07-30 by cross-checking every `mkFinding` id in `lib/` against the ids
-asserted in `test/`: **28 of 45 covered (62%)**, against 19 of 32 (59%) on 2026-07-27.
-Not a line-coverage number — for this codebase the meaningful unit is "does a finding
-have a test that proves it fires".
+**34 of 46 findings (74%)** have a test that names them, up from 30 of 46 before the
+August 2026 pass and 19 of 32 on 2026-07-27. Not a line-coverage number — for this
+codebase the meaningful unit is "does a finding have a test that proves it fires".
 
-Every finding added in the July 2026 pass ships with a test that asserts it by id
-(`mcp-deferred`, `mcp-defer-available`, `mcp-cost-defer-confound`,
-`mcp-defer-measured`, `skill-budget-fill`, `fleet-top-cost`, `fleet-unfired-rent`,
-`fleet-no-frequency`) — which is why the ratio moved despite eleven new ids.
+That ratio used to be a number typed into this file by hand, which meant it was wrong
+the moment anyone added a finding. It is now produced by
+[test/finding-coverage.mjs](test/finding-coverage.mjs) and runs inside `npm test`:
 
-The uncovered ids, and why each is unproven:
+```sh
+npm run coverage              # the report
+node test/finding-coverage.mjs --list   # just the uncovered ids
+```
+
+It carries a **ratchet floor**. Coverage dropping below it fails the suite, and the
+only honest way to make a run pass is to add a test — lowering the floor is a one-line
+edit that shows up in a diff review as exactly what it is.
+
+**Closed in the August 2026 pass:** the five `session-*` findings. They were the
+most-cited numbers pileup prints — a measured prefix, a measured cache ratio — and the
+only evidence they fired was a run on one laptop. `expensiveSession()` in
+[test/fixture.mjs](test/fixture.mjs) is one session that is expensive four ways at
+once: a 25% cache-read ratio, two models, two 31k-token reads of the same file, and two
+compactions. One session rather than four, because the collector groups by call site
+and medians across sessions, and a one-finding-per-fixture layout would never reach
+that code.
+
+The uncovered ids, and why each is still unproven:
 
 | Uncovered finding | Why it has no test |
 |---|---|
-| `session-measured-prefix`, `session-low-cache-hit`, `session-model-switch`, `session-heavy-tool-result`, `session-compaction` | Session findings were validated against real local transcripts, never against a fixture. They are the most-cited numbers in the report and the least defended. **Highest-value gap.** |
 | `prefix-gap` | Needs a fixture pairing a static surface with transcripts, which no fixture builds yet. |
 | `definition-description-total`, `definition-fat-body`, `definition-no-description` | The bloated fixture triggers `definition-fat-description` only. |
 | `doc-total-exposure`, `doc-more-trap` | Both are rollups that need more oversized files than the fixture creates. |
 | `prefix-volatile-memory` | Requires a fixture repo with real git history. |
 | `skill-pool-ratio` | Informational; fires whenever a pool exists. |
 | `window-assumed` | Needs a fixture whose transcripts name a model with no known window — easy, just not built. |
-| `fleet-skewed-repo`, `fleet-truncated` | The fleet fixture is three small repos, so neither the 2× skew threshold nor the `--limit` truncation path is reached. |
+| `fleet-skewed-repo`, `fleet-truncated`, `fleet-turn-floor` | The fleet fixture is three small repos, so neither the 2× skew threshold, the `--limit` truncation path, nor the per-repo session cap is reached. |
 
-Closing this is a **T3** item: PASS iff every `mkFinding` id in `lib/` appears in a test
-assertion, checkable with the same cross-check that produced this table. Worth doing as
-one batch rather than a roadmap row per finding.
+Closing the rest is a **T3** item: PASS iff `npm run coverage` reports 46/46.
 
 ## Triage
 
