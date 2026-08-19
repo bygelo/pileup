@@ -6,6 +6,22 @@ versions follow [semver](https://semver.org/spec/v2.0.0.html).
 Current state — what pileup is and how to run it — lives in [README.md](README.md).
 Planned work lives in [ROADMAP.md](ROADMAP.md). This file is history only.
 
+## [0.2.1] — 2026-08-19
+
+### Fixed
+
+- **`--json` was truncated at exactly 65,536 bytes whenever anything read it.**
+  Every command ended in `process.exit(0)` immediately after `process.stdout.write`.
+  On a TTY that write is synchronous and nothing was ever wrong; on a pipe it is
+  not, and exiting discarded whatever had not drained — so `pileup fleet --json |
+  jq`, or any program spawning pileup, received a fragment of JSON that could not
+  parse. The whole-machine reports are the ones large enough to hit it, which is to
+  say the ones most likely to be consumed by another tool. Dispatch returns now and
+  node exits once stdout drains. [test/pileup.test.mjs](test/pileup.test.mjs) runs
+  the CLI as a subprocess against a fixture deliberately larger than the buffer;
+  it is the only test here that spawns the binary, because it is the only bug that
+  cannot be reproduced in-process.
+
 ## [0.2.0] — 2026-08-19
 
 Two halves. The first is a correctness pass forced by changes to Claude Code in
@@ -253,5 +269,6 @@ Initial cut. Built in one session, from an empty directory.
 - Cursor, Copilot, Gemini, Windsurf and Aider adapter rows are **unexercised** — the
   paths are declared but no test or real run has confirmed them.
 
+[0.2.1]: https://github.com/bygelo/pileup/releases/tag/v0.2.1
 [0.2.0]: https://github.com/bygelo/pileup/releases/tag/v0.2.0
 [0.1.0]: https://github.com/bygelo/pileup/releases/tag/v0.1.0

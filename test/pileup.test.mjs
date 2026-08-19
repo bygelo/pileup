@@ -8,7 +8,9 @@ import { estimateToken, formatToken } from '../lib/token.mjs'
 import { splitFrontmatter } from '../lib/frontmatter.mjs'
 import { gradeBy, mkFinding, rankFinding } from '../lib/finding.mjs'
 import { expandPattern } from '../lib/fs.mjs'
-import { buildFixture } from './fixture.mjs'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { bigReportRepo, buildFixture } from './fixture.mjs'
 
 const built = buildFixture()
 const fixture = (name) => built[name]
@@ -651,4 +653,21 @@ test('session: the always-on prefix is the floor across sessions, not their medi
   assert.match(prefix.why, /what individual first messages carried/)
   // 12k against a 1M window is not critical; the median would have graded it so.
   assert.ok(['info', 'medium'].includes(prefix.severity), `graded ${prefix.severity}`)
+})
+
+
+// The CLI is exercised as a subprocess exactly once, for the one bug that only
+// exists there: writing a large report and exiting before the pipe drained.
+test('cli: a report larger than the pipe buffer survives being piped', () => {
+  const bin = fileURLToPath(new URL('../bin/pileup.mjs', import.meta.url))
+  const out = execFileSync(process.execPath, [bin, bigReportRepo(), '--json', '--no-user'], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  })
+
+  assert.ok(out.length > 65_536, `fixture must exceed the 64 KB pipe buffer, got ${out.length}`)
+  // Not a parse convenience -- `process.exit(0)` after the write truncated here
+  // at exactly 65,536 bytes, so every consumer that piped pileup got a fragment.
+  const report = JSON.parse(out)
+  assert.equal(report.tool, 'pileup')
 })

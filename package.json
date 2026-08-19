@@ -1,6 +1,6 @@
 {
   "name": "pileup",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Audit what your coding agent actually reads. Ranks a repo's context surface by cost x frequency.",
   "type": "module",
   "license": "MIT",

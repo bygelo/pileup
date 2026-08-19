@@ -57,9 +57,17 @@ pileup reports and prescribes. It never edits your repo.
 `
 
 const arg = process.argv.slice(2)
+
+// Every command used to end in `process.exit(0)`. On a pipe, stdout is async --
+// exiting truncates whatever has not flushed, which showed up as a fleet report
+// cut off at exactly 65,536 bytes when anything read it with `| jq` or spawned
+// it. Dispatch returns now; node exits on its own once the write drains.
+main()
+
+function main() {
 if (arg.includes('--help') || arg.includes('-h')) {
   process.stdout.write(USAGE)
-  process.exit(0)
+  return
 }
 
 const COMMAND = new Set(['audit', 'fleet', 'session', 'surface', 'skill', 'mcp-cost'])
@@ -85,7 +93,7 @@ if (command === 'fleet') {
     process.stdout.write(renderFleet(report))
     process.stdout.write(renderFinding(report.finding, { all: flag.all }))
   }
-  process.exit(0)
+  return
 }
 
 // `mcp-cost` prices servers by comparing every repo on the machine, so it takes
@@ -98,7 +106,7 @@ if (command === 'mcp-cost') {
     process.stdout.write(renderMcpCost(report))
     process.stdout.write(renderFinding(report.finding, { all: true }))
   }
-  process.exit(0)
+  return
 }
 
 // `skill` audits the machine, not a repo -- promotion is a machine-wide decision.
@@ -114,7 +122,7 @@ if (command === 'skill') {
     process.stdout.write(renderSkill(report))
     process.stdout.write(renderFinding(report.finding, { all: flag.all }))
   }
-  process.exit(0)
+  return
 }
 
 const root = resolve(flag._[0] ?? process.cwd())
@@ -142,6 +150,7 @@ if (flag.json) {
   process.stdout.write(`${JSON.stringify(report.surface, null, 2)}\n`)
 } else {
   process.stdout.write(render(report, { all: flag.all }))
+}
 }
 
 function parseFlag(argv) {

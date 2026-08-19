@@ -4,8 +4,8 @@ Living document. Edited honestly — gaps are gaps, not opportunities.
 
 ## Status
 
-v0.2.0 — the correctness pass and `pileup fleet` are released. **Six commands**,
-seven collectors, zero dependencies, **27 tests green**. Audits
+v0.2.1 — the correctness pass and `pileup fleet` are released. **Six commands**,
+seven collectors, zero dependencies, **28 tests green**. Audits
 itself clean. **P0 and P1 are closed**; what remains is one P2 row, one blocked
 research item, and the test-coverage gap recorded in Triage. CI landed with this
 release.

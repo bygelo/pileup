@@ -376,3 +376,22 @@ function write(base, rel, content) {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, content)
 }
+
+/**
+ * A repo whose `--json` report is comfortably larger than a 64 KB pipe buffer.
+ *
+ * It exists for one regression: the CLI used to `process.exit(0)` immediately
+ * after writing, which truncated piped output at exactly 65,536 bytes. Nothing
+ * smaller than the buffer can catch that, so the fixture's only real property
+ * is its size.
+ */
+export function bigReportRepo(count = 400) {
+  const root = mkdtempSync(join(tmpdir(), 'pileup-big-'))
+  write(root, 'CLAUDE.md', '# CLAUDE.md\n\nSmall on purpose. The skills are the bulk.\n')
+  for (let i = 0; i < count; i++) {
+    const name = `skill-${String(i).padStart(3, '0')}`
+    write(root, `.claude/skills/${name}/SKILL.md`,
+      `---\nname: ${name}\ndescription: Does the ${name} thing, and describes it at enough length that the report has something to carry.\n---\n\n# ${name}\n\nbody\n`)
+  }
+  return root
+}
