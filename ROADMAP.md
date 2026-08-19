@@ -5,7 +5,7 @@ Living document. Edited honestly — gaps are gaps, not opportunities.
 ## Status
 
 v0.2.1 — the correctness pass and `pileup fleet` are released. **Six commands**,
-seven collectors, zero dependencies, **30 tests green**, **74% finding coverage**. Audits
+seven collectors, zero dependencies, **31 tests green**, **74% finding coverage**. Audits
 itself clean. **P0, P1 and P2 are closed**; what remains is one blocked research
 item and the finding-coverage tail, which now has a runnable ratchet rather than a
 hand-typed number.

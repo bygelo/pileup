@@ -17,7 +17,7 @@ proposing a dashboard, a dollar-cost table, or an auto-fix.
 ## Commands
 
 ```bash
-npm test                  # 30 tests + the harness-fact and finding-coverage checks
+npm test                  # 31 tests + the harness-fact and finding-coverage checks
 npm run harness-fact      # the dated-source register on its own
 npm run coverage          # which findings have a test that names them (ratchet floor)
 node bin/pileup.mjs       # audit this repo

@@ -29,6 +29,17 @@ Planned work lives in [ROADMAP.md](ROADMAP.md). This file is history only.
 
 ### Fixed
 
+- **`fleet-twin-memory` reported the fix as the problem.** A repo whose
+  `CLAUDE.md` contains nothing but `@AGENTS.md` was flagged as hand-maintaining
+  two copies — which is exactly what the finding's own prescription tells you to
+  do instead. Found on a real machine: one repo's `CLAUDE.md` is eleven bytes and
+  it led the twin list. Both rows still carry a large per-turn figure because an
+  `@import` is inlined into the prefix, so the size signal cannot distinguish
+  them; the import list can, and now does. The cost is still reported — it is
+  real — it is the *drift* claim that does not apply. pileup grading somebody's
+  compliance as a problem is the same class of error as the claims the July pass
+  had to retract.
+
 - **The five `session-*` findings are asserted against something committed.** They are
   the most-cited numbers pileup prints — a measured prefix, a measured cache ratio — and
   until now the only evidence they fired was a run on one laptop. Real transcripts are

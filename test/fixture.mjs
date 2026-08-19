@@ -469,3 +469,41 @@ export function expensiveSession() {
 
 const MODEL_A = 'claude-opus-5'
 const MODEL_B = 'claude-sonnet-5'
+
+
+/**
+ * Two repos that both carry CLAUDE.md and AGENTS.md, for opposite reasons.
+ *
+ * `twin` hand-maintains two large copies -- the drift the finding exists to warn
+ * about. `pointer` holds one real file and a one-line `@import` of it, which IS
+ * the fix the finding prescribes. Reporting the second is telling somebody to do
+ * what they already did.
+ */
+export function pointerFleet() {
+  const root = mkdtempSync(join(tmpdir(), 'pileup-pointer-'))
+  const projects = join(root, 'projects')
+  const body = `# Rules\n\n${'A real instruction line that costs real tokens. '.repeat(700)}`
+
+  write(join(root, 'twin'), 'CLAUDE.md', body)
+  write(join(root, 'twin'), 'AGENTS.md', body)
+
+  write(join(root, 'pointer'), 'AGENTS.md', body)
+  write(join(root, 'pointer'), 'CLAUDE.md', '@AGENTS.md\n')
+
+  // A fleet run refuses to rank without measured turns -- frequency is half the
+  // ranking, and pileup declines to report size alone. So both repos need history.
+  const repo = [join(root, 'twin'), join(root, 'pointer')]
+  for (const cwd of repo) {
+    const turn = JSON.stringify({
+      type: 'assistant',
+      cwd,
+      message: {
+        model: 'claude-opus-5',
+        usage: { cache_read_input_tokens: 20_000, cache_creation_input_tokens: 0, input_tokens: 0 },
+      },
+    })
+    write(projects, `${cwd.replace(/[^a-zA-Z0-9]/g, '-')}/s.jsonl`, Array(40).fill(turn).join('\n'))
+  }
+
+  return { root, repo, claudeDir: projects }
+}

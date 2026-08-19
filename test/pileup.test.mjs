@@ -10,7 +10,7 @@ import { gradeBy, mkFinding, rankFinding } from '../lib/finding.mjs'
 import { expandPattern } from '../lib/fs.mjs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { bigReportRepo, buildFixture, expensiveSession } from './fixture.mjs'
+import { bigReportRepo, buildFixture, expensiveSession, pointerFleet } from './fixture.mjs'
 
 const built = buildFixture()
 const fixture = (name) => built[name]
@@ -711,4 +711,28 @@ test('session: one compaction is not a habit, and is not reported', async () => 
   const f = expensiveSession()
   const out = collect({ root: f.cwd, home: f.home, claudeDir: f.claudeDir, sessionLimit: 0 })
   assert.deepEqual(out.finding, [], 'reading zero sessions must claim nothing at all')
+})
+
+
+// pileup grading somebody's compliance as a problem is the same class of wrong as
+// the claims the July pass had to retract. Found on a real machine: profstopick's
+// CLAUDE.md is eleven bytes of `@AGENTS.md` and it was reported as a twin.
+test('fleet: a pointer is not a twin, and a real copy still is', async () => {
+  const { auditFleet } = await import('../lib/fleet.mjs')
+  const f = pointerFleet()
+  const out = auditFleet({ repo: f.repo, user: false, home: f.root, claudeDir: f.claudeDir })
+  const twin = out.finding.filter((x) => x.id === 'fleet-twin-memory')
+
+  assert.equal(twin.length, 1, 'exactly one of the two repos hand-maintains a copy')
+  assert.match(twin[0].title, /twin/, 'and it is the one that does')
+  assert.ok(
+    !twin.some((x) => /pointer/.test(x.title)),
+    'CLAUDE.md holding only `@AGENTS.md` IS the prescribed fix; reporting it tells someone to redo it',
+  )
+
+  // The cost is still real and still reported -- an @import is inlined into the
+  // prefix. It is the drift claim that does not apply.
+  const row = out.item.filter((i) => i.kind === 'memory' && i.repo[0] === 'pointer')
+  assert.equal(row.length, 2, 'both files are still ranked')
+  assert.ok(row.every((i) => i.perTurn > 4_000), 'the pointer resolves to the full text')
 })
