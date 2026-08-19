@@ -4,6 +4,7 @@
 // committing 600 KB decisions logs" would be a poor look. These are written to
 // a temp dir at test time and thrown away with it.
 
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -58,6 +59,9 @@ export function skillRoot() {
 
   skill(root, 'used', 'Deploy the service to production and roll back on failure.')
   skill(root, 'ghost', 'Generate quarterly financial projections from ledger exports.')
+  // Only ever reached for as `/slashed`, never as a Skill tool call. Counting one
+  // channel and not the other reported a skill in daily use as never fired.
+  skill(root, 'slashed', 'Rotate the signing certificate and restart the edge nodes.')
   skill(root, 'twin-a', 'Audit database migration scripts for destructive column drops before applying.')
   skill(root, 'twin-b', 'Audit database migration scripts before applying, catching destructive drops.')
   skill(join(root, '.disabled'), 'parked', 'Parked out of discovery; costs nothing.')
@@ -71,7 +75,20 @@ export function skillRoot() {
       type: 'assistant',
       message: { content: [{ type: 'tool_use', name: 'Skill', input: { skill: name } }] },
     })
-  write(transcript, 'proj/session.jsonl', [turn('used'), turn('used'), turn('used')].join('\n'))
+  write(
+    transcript,
+    'proj/session.jsonl',
+    [
+      turn('used'),
+      turn('used'),
+      turn('used'),
+      // The other channel a definition fires through. `/slashed extra args` is
+      // included deliberately: a pattern that stops at the closing tag only would
+      // miss every invocation carrying arguments.
+      JSON.stringify({ type: 'user', message: { content: '<command-name>/slashed</command-name>' } }),
+      JSON.stringify({ type: 'user', message: { content: '<command-name>/slashed do the thing</command-name>' } }),
+    ].join('\n'),
+  )
 
   return { root, pool, transcript, ledger: join(base, 'ledger.json') }
 }
@@ -118,7 +135,188 @@ export function mcpMachine() {
   const config = join(base, 'config.json')
   write(base, 'config.json', JSON.stringify({ mcpServers: { everywhere: {} }, projects: project }))
 
-  return { transcript, config }
+  // `home` and `env` are pinned so the deferred-loading cohort split reads the
+  // fixture and not the developer's own ~/.claude/settings.json. A test whose
+  // result depends on the machine running it is not a test.
+  return { transcript, config, home: base, env: {} }
+}
+
+/**
+ * The same machine, but half its repos declare deferred tool loading.
+ *
+ * The confound this exists to catch: `defer*` repos have small prefixes because
+ * their schemas load on demand, not because of which servers they declare.
+ * Contrasting across that line prices the setting and blames a server.
+ */
+export function mcpDeferMachine() {
+  const base = mkdtempSync(join(tmpdir(), 'pileup-defer-'))
+  const transcript = join(base, 'projects')
+  const repoBase = join(base, 'repo')
+
+  // `off*` repos switch deferral OFF explicitly, because unset is the ON default
+  // -- so an unset repo belongs to the deferring cohort, not the other one.
+  const repo = [
+    ...['off1', 'off2', 'off3', 'off4'].map((n) => [n, ['heavy'], 120_000, false]),
+    ...['off5', 'off6'].map((n) => [n, [], 40_000, false]),
+    ...['on1', 'on2', 'on3'].map((n) => [n, ['heavy'], 38_000, true]),
+  ]
+
+  const project = {}
+  for (const [name, server, prefix, defer] of repo) {
+    const cwd = join(repoBase, name)
+    write(cwd, '.mcp.json', JSON.stringify({ mcpServers: Object.fromEntries(server.map((s) => [s, {}])) }))
+    if (!defer)
+      write(join(cwd, '.claude'), 'settings.json', JSON.stringify({ env: { ENABLE_TOOL_SEARCH: 'false' } }))
+    project[cwd] = {}
+
+    const turn = (total) =>
+      JSON.stringify({
+        type: 'assistant',
+        cwd,
+        version: '2.1.219',
+        message: { usage: { cache_read_input_tokens: total, cache_creation_input_tokens: 0, input_tokens: 0 } },
+      })
+    write(transcript, `${name}/session.jsonl`, [turn(prefix + 250_000), turn(prefix)].join('\n'))
+  }
+
+  write(base, 'config.json', JSON.stringify({ mcpServers: {}, projects: project }))
+  return { transcript, config: join(base, 'config.json'), home: base, env: {} }
+}
+
+/**
+ * One repo whose sessions open at wildly different sizes.
+ *
+ * `small` opens at 12k -- system prompt, tools, memory, nothing else. `paste`
+ * opens at 500k because the first message carried an attached dump. A median of
+ * the two calls the always-on prefix ~256k and then blames MCP tool schemas for
+ * the difference against disk. On a real repo that produced a 483k CRITICAL
+ * prefix and a 475k CRITICAL "not on disk" gap where the true floor was 13k.
+ */
+export function bimodalSession() {
+  const base = mkdtempSync(join(tmpdir(), 'pileup-bimodal-'))
+  const cwd = join(base, 'repo')
+  const projects = join(base, 'projects')
+  write(cwd, 'CLAUDE.md', `# repo\n\n${'Build with npm run build. '.repeat(200)}`)
+
+  const turn = (total) =>
+    JSON.stringify({
+      type: 'assistant',
+      cwd,
+      message: {
+        model: 'claude-opus-5',
+        usage: { cache_read_input_tokens: total, cache_creation_input_tokens: 0, input_tokens: 0 },
+      },
+    })
+
+  const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-')
+  // Opening turn first, then a larger one: the opening is the smallest.
+  write(projects, `${slug}/small.jsonl`, [turn(12_000), turn(90_000)].join('\n'))
+  write(projects, `${slug}/paste.jsonl`, [turn(500_000), turn(560_000)].join('\n'))
+
+  return { cwd, home: base, claudeDir: projects }
+}
+
+/**
+ * A real git repo with a committed doc, an untracked one, and an ignored one.
+ *
+ * The case this exists for: pileup tells you to split a huge memory file into a
+ * doc, you do, and the new doc is invisible to the next audit because it has not
+ * been committed. A file an agent can plainly open, created by following pileup's
+ * own advice, that pileup could not see. Ignored files stay out, which is the
+ * reason the git index was trusted in the first place.
+ */
+export function gitRepo() {
+  const root = mkdtempSync(join(tmpdir(), 'pileup-git-'))
+  const big = (label) => `# ${label}\n\n${`Line of ${label} prose that costs real tokens. `.repeat(2000)}`
+
+  write(root, '.gitignore', 'ignored/\n')
+  write(root, 'CLAUDE.md', '# CLAUDE\n\nSee [committed](docs/committed.md).\n')
+  write(root, 'docs/committed.md', big('committed'))
+  write(root, 'docs/untracked.md', big('untracked'))
+  write(root, 'ignored/generated.md', big('ignored'))
+
+  const git = (...a) =>
+    execFileSync('git', a, { cwd: root, stdio: 'ignore', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null' } })
+  git('init', '-q')
+  git('config', 'user.email', 'test@example.com')
+  git('config', 'user.name', 'test')
+  git('add', 'CLAUDE.md', 'docs/committed.md', '.gitignore')
+  git('commit', '-qm', 'first')
+
+  return { root }
+}
+
+/**
+ * A machine with several repos, so a document's cost can be spread across them.
+ *
+ * Shaped around the two traps in a fleet ranking. `wide` is one user-global
+ * skill copied into three discovery roots -- one document, not three. `busy` has
+ * 100 measured turns and `quiet` has 2, so ranking by size and ranking by
+ * size x frequency give different answers, which is the whole point.
+ */
+export function fleetMachine() {
+  const base = mkdtempSync(join(tmpdir(), 'pileup-fleet-'))
+  const home = join(base, 'home')
+  const work = join(base, 'work')
+  const transcript = join(home, '.claude', 'projects')
+
+  const skill = (dir, name, description) =>
+    write(dir, `${name}/SKILL.md`, `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n\nbody\n`)
+
+  // One user-global skill, installed into all three roots an installer writes to.
+  for (const root of ['.claude/skills', '.codex/skills', '.agents/skills'])
+    skill(join(home, root), 'wide', 'A promoted skill that every repo on the machine can see and pay for.')
+  // A second that has never fired.
+  skill(join(home, '.claude', 'skills'), 'ghost', 'Never chosen by anything, in any repo, ever.')
+
+  const repo = [
+    ['busy', 100],
+    ['quiet', 2],
+    ['idle', 0],
+  ]
+
+  // A slash command with no `name:` frontmatter, so its name comes from the
+  // filename. It must arrive as `runme`, not `runme.md`, or invocation counting
+  // can never match what a transcript records.
+  write(
+    join(home, '.claude', 'commands'),
+    'runme.md',
+    '---\ndescription: Run the thing that needs running, then report what it did.\n---\n\n# Run me\n',
+  )
+
+  for (const [name, turn] of repo) {
+    const cwd = join(work, name)
+    mkdirSync(join(cwd, '.git'), { recursive: true })
+    // Two parallel memory files, ~identical, one per harness. You pay the larger
+    // and never both -- the fleet total must not sum them.
+    write(cwd, 'CLAUDE.md', `# ${name}\n\n${'Build with npm run build and keep naming singular. '.repeat(500)}`)
+    write(cwd, 'AGENTS.md', `# ${name}\n\n${'Build with npm run build and keep naming singular. '.repeat(460)}`)
+    // The same repo-local skill in two discovery roots: still one document.
+    for (const root of ['.claude/skills', '.agents/skills'])
+      skill(join(cwd, root), 'local', 'A repo-local skill installed into two discovery roots at once.')
+
+    if (!turn) continue
+    const line = []
+    for (let i = 0; i < turn; i++)
+      line.push(
+        JSON.stringify({
+          type: 'assistant',
+          cwd,
+          message: {
+            model: 'claude-opus-5',
+            usage: { cache_read_input_tokens: 20_000, cache_creation_input_tokens: 0, input_tokens: 0 },
+            content: i === 0 ? [{ type: 'tool_use', name: 'Skill', input: { skill: 'wide' } }] : [],
+          },
+        }),
+      )
+    // A slash command invocation, which is how a command's firing is observable
+    // at all -- it never appears as a `Skill` tool call.
+    line.push(JSON.stringify({ type: 'user', cwd, message: { content: '<command-name>/runme</command-name>' } }))
+    // Claude partitions transcripts by an encoded repo path.
+    write(transcript, `${cwd.replace(/[^a-zA-Z0-9]/g, '-')}/session.jsonl`, line.join('\n'))
+  }
+
+  return { home, work, transcript }
 }
 
 /**

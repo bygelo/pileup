@@ -79,12 +79,114 @@ CRITICAL docs/decisions.md is 327k tokens (33% of the window)
 ```sh
 pileup                     # audit the current repo
 pileup ~/some/repo         # audit somewhere else
+pileup fleet ~/work        # every repo under a folder, ranked by what each doc cost
 pileup session             # measured token spend from local session transcripts
 pileup skill               # what the skill discovery root costs, and what it earns
 pileup mcp-cost            # price MCP servers by contrast across all your repos
 pileup surface             # every surface pileup found, ungraded, as JSON
 pileup --json              # the full report, machine-readable
 ```
+
+### `pileup fleet` — one row per document, not per repo
+
+A single-repo audit cannot answer the question people actually have, which is
+*"of everything I have accumulated, what should I delete first"*. That needs two
+things one repo does not have. **Breadth**: a skill promoted into
+`~/.claude/skills` bills in every repo on the machine, and audited one repo at a
+time it looks like a 200-token line item forty separate times rather than the
+number it is. **Frequency**: cost is size × how often you pay it, and how often
+you pay it depends on how much you actually work in each repo — which is measured
+in transcripts, not inferable from disk.
+
+So the unit is the document and the sort key is
+`paid = tokens per turn × turns measured in the repos it is injected into`.
+
+Run against 101 real repos, this is what it said — and then what acting on it did.
+Every number below is from an actual run:
+
+```
+  document                    kind     scope  tok/turn  turns  repos     paid  fired
+  CLAUDE.md                   memory   repo     115765    14k      1     1.7B      -
+  AGENTS.md                   memory   repo     101585    14k      1     1.5B      -
+  CLAUDE.md                   memory   repo      33834    17k      1     590M      -
+  fanout                      skill    user        262   490k    100     129M     11
+  convention                  skill    user        186   490k    100      91M     19
+  dispatch                    skill    user         88   490k    100      43M      0
+
+  101 repos audited · 23 with session history · 490,478 measured turns · 70 documents
+
+HIGH     CLAUDE.md in sisia-app has cost about 1.7B tokens (repo-scoped memory)
+         every turn
+         115,765 tokens per turn times 14,354 turns measured in the 1 repo it is injected
+         into. Across the whole fleet, 70 always-on documents come to roughly 4.4B tokens
+         for the worst harness (claude) -- per harness, not summed, because only one runs
+         at a time.
+
+HIGH     17 skills and commands have cost about 473M tokens and never fired
+         every turn
+         Across 545 transcripts holding 380 invocations, none of these was ever chosen.
+         Their descriptions were still re-sent on every turn of every session in every repo
+         that could see them. This is the cleanest deletion list on the machine: measured
+         cost, measured zero use.
+
+LOW      sisia-app carries CLAUDE.md and AGENTS.md, 116k and 102k tokens per turn
+         every turn
+         Two memory files for two harnesses in one repo. You pay the larger, never both.
+         The cost of the pair is not tokens, it is drift: whichever one you edit, the other
+         harness keeps running the old rules.
+```
+
+That `CLAUDE.md` is a real 405 KB file. Every "never fired" claim above was
+re-checked against the transcripts by hand before this was written; two earlier
+false positives are described in [CHANGELOG.md](CHANGELOG.md).
+
+Acting on that report, in the order it ranked things:
+
+| | before | after | |
+|---|---|---|---|
+| `sisia-app/CLAUDE.md` | 115,765 | 33,376 | 74% of it was one "runtime gotchas" section — 142 entries moved to a doc, with a titles-only index left inline so the agent still knows they exist |
+| `sisia-app/AGENTS.md` | 101,585 | 32,424 | same section, same archive — one source of truth, so the twins stop drifting |
+| `blead/CLAUDE.md` | 73,542 | 30,980 | a dated shipped-work log; newest entry kept, 25 archived |
+| `blead/AGENTS.md` | 41,483 | 30,093 | pointed at the same archive |
+| `nookr2/CLAUDE.md` | 33,834 | 24,956 | "Phase History" detail archived, its summary table kept as the index |
+| `nookr2/AGENTS.md` | 27,569 | 21,437 | same archive |
+| **total per turn** | **393,778** | **173,266** | **−56%**, with nothing deleted |
+| discoverable skills | 24 (2.3k/turn) | 12 (1.8k/turn) | 12 that had never fired moved to a pool, still invocable by path |
+
+The shape of every fix was the same, and it is the one this tool argues for: history
+and reference material do not belong in a file that is re-sent on every turn, but
+they do belong somewhere the agent can reach, with a small index telling it when to
+look.
+
+Three things `paid` is **not**, all of which the report states rather than hides:
+
+- Not uniformly measured. `turns` is measured; `tok/turn` is the same estimate as
+  everywhere else in pileup.
+- Not history. It applies each document's *current* size to every past turn, so a
+  file that grew into its size cost less than this along the way. Read it as
+  *"what this is costing me now, weighted by where I actually work"* — which is
+  what a deletion decision needs.
+- Not a bill. Cached input bills at roughly a tenth of fresh input. The ranking is
+  unaffected, which is why pileup reports ratios and not prices.
+
+It also refuses in the same places the rest of pileup does: one document installed
+into several discovery roots collapses to one row, turns accrue once per repo rather
+than once per installed copy, `fired` shows `-` where firing is not observable and
+`0` only where transcripts were actually read, and a run with no session history
+reports that it has no frequency half rather than falling back to ranking by size.
+
+**Do not sum the `paid` column.** Two rows for one repo are two harnesses — a
+`CLAUDE.md` and an `AGENTS.md` — and you only ever run one of them. The fleet total
+is reported per harness and the report says which one, the same rule the single-repo
+audit follows. On the machine this was developed against, those two files were 97%
+identical; the pair is reported as `fleet-twin-memory`, not because it is double
+cost but because it is *not*, and because two hand-maintained copies of the same
+instructions drift apart silently.
+
+`--sessions` defaults to 200 per repo here rather than the single-repo default of
+20, because a fleet run is a frequency survey and 20 undercounted one real repo's
+turns by more than half. Any repo that still hits the cap is named, so a floor is
+never presented as a total.
 
 ### `pileup mcp-cost` — which server is it, actually
 
@@ -166,7 +268,9 @@ transcripts to read. Point it at a ledger with `--ledger` and a pool with
 
 | option | |
 |---|---|
-| `--window <n>` | context window to measure against (default `200000`) |
+| `--window <n>` | context window to measure against. Omit it and pileup resolves one — see [On the context window](#on-the-context-window) |
+| `--repo <a,b>` | `pileup fleet` only — audit exactly these repos instead of discovering them |
+| `--limit <n>` / `--depth <n>` | `pileup fleet` only — how many repos to audit (default `60`) and how deep to look for a `.git` (default `4`) |
 | `--no-user` | ignore the user-global surface (`~/.claude`, `~/.codex`) |
 | `--only a,b` / `--skip a,b` | pick collectors |
 | `--all` | include info-level findings |
@@ -188,11 +292,75 @@ partial audit is still worth reading.
 |---|---|
 | **memory** | instruction files injected on every turn, and the `@import`s they inline. An `@import` is not a link; its full text lands in the prefix. |
 | **definition** | skills, subagents and slash commands. Frontmatter `description` is always-on; the body is on-invoke. Grades the two separately, because they are not the same cost. |
-| **mcp** | configured servers. Every server's tool schemas ride every turn. |
+| **mcp** | configured servers, and whether **deferred tool loading** is declared. With it off, every server's tool schemas ride every turn; with it on they may not be in the prefix at all — so this collector grades two different worlds. See [On deferred tool loading](#on-deferred-tool-loading). |
 | **prefix** | hooks that rewrite the prefix mid-session, and memory files churning hard enough to keep invalidating the cache. |
 | **doc** | large files an agent could open whole. Escalates when a memory file points at one, because then the repo is not merely exposed to the risk — it is directing the agent into it. |
 | **session** | what the API actually billed, from Claude Code and Codex transcripts. The only numbers here that are not estimates. |
 | **output** | the other side of the bill. Output tokens cost ~5x an input token, which is why terseness skills are popular — this prices that trade against your own sessions instead of a blog post's. |
+
+### On deferred tool loading
+
+pileup used to say, flatly, that every connected MCP server's tool schemas ride
+the always-on prefix on every turn. That was true when it was written and is now
+**conditional**, which is a more interesting fact than the original claim.
+
+Anthropic's [Tool Search Tool](https://www.anthropic.com/engineering/advanced-tool-use)
+(`defer_loading` on the API, `ENABLE_TOOL_SEARCH` in Claude Code's settings) hands
+the model tool *names* and loads a full JSON Schema only when it reaches for one.
+**In current Claude Code it is on by default** — an unset `ENABLE_TOOL_SEARCH`
+resolves to on, not off. pileup got this backwards once and produced a HIGH finding
+telling users to enable something already running; the mode table now mirrors the
+resolver read out of the shipped binary rather than a writeup.
+Reported effect: about **85% fewer tool-definition tokens**, and one Claude Code
+case going from 31.7k tokens of MCP schemas to zero. The part that makes this not
+merely a cost tradeoff is that tool *selection* improves — published evaluations
+put Opus 4.5 at 79.5% correct tool choice with every schema loaded and 88.1% with
+search, because a model picking from a catalogue beats one picking from a wall of
+JSON. There is no accuracy argument for leaving it off.
+
+Two things follow, and the second was a bug rather than a gap:
+
+1. Grading a server count as an always-on cost is wrong when pileup has reason to
+   believe that cost is not being paid. When schemas are expected to defer the
+   finding is `info` and says whether that is declared or defaulted; a real
+   severity fires only when something actually switched deferral **off**.
+   Confirmation comes from measurement, not the setting: `mcp-defer-confirmed`
+   fires when declared servers measure no cost above the noise floor across your
+   repos, which is also the only check that catches the two runtime conditions no
+   file scan can see — a non-first-party `ANTHROPIC_BASE_URL`, and Vertex AI,
+   which rejects the beta header.
+2. `pileup mcp-cost` prices servers by contrasting repos. Two repos on opposite
+   sides of this setting are **not comparable samples**, and contrasting them
+   prices the setting while blaming a server. It now prices inside one cohort,
+   names the repos it set aside, and separately prices the setting itself by
+   cross-cohort contrast — labelled coarse, because those cohorts also declare
+   different servers.
+
+### On the context window
+
+Every share-of-window figure in a report scales with one number, so pileup no
+longer assumes it. Claude Opus 5 became Claude Code's default Opus model in July
+2026 with a **1M** window; grading its sessions against the old 200k default
+overstated every share by five times, on exactly the findings the report leads
+with.
+
+The window is now resolved in four steps, and the report labels which one it used:
+
+| source | measured? | |
+|---|---|---|
+| `--window` | — | you said so |
+| reported | yes | the harness wrote it into the transcript |
+| model | no | derived from the model id seen in a transcript |
+| default | no | nothing said, so 200k, and the report says *assumed* |
+
+The model→window table is deliberately short: it holds windows that are
+documented and returns *unknown* for everything else. A wrong window is worse
+than an admitted-unknown one, because it silently rescales the whole report.
+
+The same resolution feeds `pileup skill`, because Claude Code sizes its skill
+description budget at **2% of the context window** — 4,000 characters at 200k,
+20,000 at 1M. Past that ceiling this stops being a cost question: descriptions get
+dropped or truncated, and which skill loses is not your choice.
 
 ### On terseness skills
 
@@ -257,6 +425,22 @@ That is a sample of three files, not a calibration, and treating it as one would
 be exactly the kind of unverified number this tool exists to catch. Calibrating
 it properly is [a P0 item](ROADMAP.md). Until then, treat every estimate as a
 ranking signal rather than a measurement — ranking is all pileup needs it for.
+
+Tokenizers are also **not interchangeable**, and pileup reports per harness — so
+one estimator applied to every row meant at least one row was wrong. Published
+cross-tokenizer comparisons put 1,000 characters of English at roughly 245 tokens
+on GPT-5, 270 on Claude and 290–320 on Gemini: Claude runs 10–20% above tiktoken,
+Gemini above both. pileup applies a ratio per family (`tiktoken` 0.91, Anthropic
+1.0, SentencePiece 1.13) and names the tokenizer in each row.
+
+Be clear about what that is and is not. It is **not** a calibration — the ratios
+come from published third-party comparisons, not from a local run against real
+tokenizers, and they say nothing about whether the absolute level is right. What
+they fix is the *relative* error between two harness rows in the same report,
+which was previously zero by construction and therefore wrong. Harnesses that are
+model *pickers* rather than model vendors — Cursor, Windsurf, Aider — are labelled
+`model-dependent` and counted at the reference ratio, because nothing on disk
+reliably says which model you chose.
 
 These are **measured, not estimated**:
 
@@ -323,7 +507,7 @@ turn, and neither half alone can see it.
 ## Contributing
 
 ```sh
-npm test          # 17 tests, node:test, no install step
+npm test          # 25 tests + the harness-fact check, node:test, no install step
 ```
 
 Fixtures are **generated into a temp dir at test time, never committed** — a repo
@@ -331,7 +515,13 @@ whose point is "stop committing 600 KB decisions logs" should not ship one.
 
 Two constraints worth knowing before opening a PR: **zero dependencies** (it is
 why `npx pileup` works with no install), and **no writes to the audited repo**.
-Both are load-bearing, not incidental.
+Both are load-bearing, not incidental, and CI fails on the first one.
+
+A third, learned the hard way: **every hard-coded fact about a harness needs a
+dated `SOURCE:` comment and a row in [docs/harness-fact.md](docs/harness-fact.md)**.
+`npm test` enforces it. Three of pileup's claims went stale in a single month
+without a single test going red, because every test asserted pileup's own logic and
+none asserted anything about the world it models.
 
 Shipped history is in [CHANGELOG.md](CHANGELOG.md); planned work and known gaps
 are in [ROADMAP.md](ROADMAP.md), including a rejections log so settled arguments

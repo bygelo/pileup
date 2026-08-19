@@ -4,9 +4,20 @@ Living document. Edited honestly — gaps are gaps, not opportunities.
 
 ## Status
 
-v0.1.0. Five commands, seven collectors, zero dependencies, 17 tests green. Audits
+v0.1.0 plus an unreleased correctness pass and `pileup fleet`. **Six commands**,
+seven collectors, zero dependencies, **25 tests green**. Audits
 itself clean. **P0 and P1 are closed**; what remains is one P2 row, one blocked
 research item, and the test-coverage and CI gaps recorded in Triage.
+
+**A new standing risk, added 2026-07-30.** The correctness pass above existed
+because the harness moved and pileup did not: three shipped claims had quietly
+become false and one was producing a wrong number rather than a stale one.
+Deferred tool loading invalidated the premise of the `mcp` collector, Opus 5's 1M
+default made every share-of-window figure overstate by five times, and one
+tokenizer across every harness row guaranteed at least one wrong row. None of
+this was caught by a test, because all the tests asserted pileup's own logic and
+none asserted anything about the world it models. That is now a permanent P1
+item — see **Track the harness** below — not a one-off cleanup.
 
 Shipped history is in [CHANGELOG.md](CHANGELOG.md); this file is forward-looking only.
 
@@ -53,6 +64,14 @@ win the halves outright.
 | **Detect colliding skill descriptions** | Two skills whose descriptions overlap cause misrouting *and* pay always-on twice. Measured on this machine: two design skills at 29% shared vocabulary and two docs skills at 23%. External work puts description wording at ~20× impact on activation odds. | `pileup skill` | ~2h | **T3** — PASS iff both known pairs are reported and no pair below the threshold is. | ✅ **done 2026-07-27** |
 | **Parse Codex session transcripts** | [lib/adapter.mjs](lib/adapter.mjs) advertised Codex support while `session` read only `~/.claude/projects`, so every session finding silently reported nothing for a Codex user. Parsing lives in [lib/transcript.mjs](lib/transcript.mjs) now, one reader per harness, normalising to one shape. **Validated on 259 local rollouts.** | `pileup session` on a Codex repo | ~4h | **T3** — run `pileup session` in a repo with `~/.codex/sessions` history; PASS iff turns and prefix are non-zero and cache hit stays ≤100% (Codex counts cached tokens as a subset of the prompt, not a sibling). | ✅ **done 2026-07-27** |
 
+## P1 — Keep the claims true as the harness moves
+
+| Item | What it closes | Surface | Effort | Benchmark | Status |
+|---|---|---|---|---|---|
+| **Track the harness** (partly closed) | The July 2026 pass found three false claims and one wrong number, none caught by a test. Every hard-coded fact about a harness — the model→window table in [lib/model.mjs](lib/model.mjs), the 2% skill budget in [lib/budget.mjs](lib/budget.mjs), the tokenizer ratios in [lib/token.mjs](lib/token.mjs), the `ENABLE_TOOL_SEARCH` key in [lib/toolsearch.mjs](lib/toolsearch.mjs) — is a claim about somebody else's release notes and rots silently. | all of them | ~2h | **T3** — every such constant carries a dated source comment, and one place lists them for review. PASS iff `grep` finds no undated harness fact in `lib/`. | 🟡 **half done 2026-07-30** — [test/harness-fact.mjs](test/harness-fact.mjs) enforces citation + registration in `npm test`, and [docs/harness-fact.md](docs/harness-fact.md) is the register. Still open: nothing asserts a fact is *true*, only that it is dated. |
+| **A dated provenance comment on every borrowed number** | The tokenizer ratios and the 85%/88.1% deferral figures come from third-party writeups, not from local runs. They are cited in prose but not dated in code, so a future reader cannot tell a measured constant from a borrowed one. | [lib/token.mjs](lib/token.mjs), [lib/collector/mcp.mjs](lib/collector/mcp.mjs) | ~30m | **T3** — PASS iff each borrowed constant names its source and the date it was read. | ✅ **done 2026-07-30** — enforced, not just written. |
+| **Verify deferred loading instead of trusting the declaration** | Went from nice-to-have to urgent: pileup had the default backwards and produced a HIGH finding telling the user to enable something already on. Solved from the other side — `mcp-defer-confirmed` confirms from **measured** per-server contrast rather than a before/after, so it needs no setting change to observe, and it catches the runtime host conditions a file scan cannot. **Measured 8 of 8 servers free across 34 repos.** | `pileup mcp-cost` | ~3h | **T3** — PASS iff a machine whose servers measure inside the noise floor reports confirmation, and one whose servers measurably cost tokens does NOT. Both asserted. | ✅ **done 2026-07-30** |
+
 ## P2 — Coverage
 
 | Item | What it closes | Surface | Effort | Benchmark | Status |
@@ -85,9 +104,15 @@ Full reasons in [docs/roadmap-rejected.md](docs/roadmap-rejected.md).
 
 ## Test-coverage gaps
 
-Measured 2026-07-27 by cross-checking every `mkFinding` id in `lib/` against the ids
-asserted in `test/`: **19 of 32 covered (59%)**. Not a line-coverage number — for this
-codebase the meaningful unit is "does a finding have a test that proves it fires".
+Measured 2026-07-30 by cross-checking every `mkFinding` id in `lib/` against the ids
+asserted in `test/`: **28 of 45 covered (62%)**, against 19 of 32 (59%) on 2026-07-27.
+Not a line-coverage number — for this codebase the meaningful unit is "does a finding
+have a test that proves it fires".
+
+Every finding added in the July 2026 pass ships with a test that asserts it by id
+(`mcp-deferred`, `mcp-defer-available`, `mcp-cost-defer-confound`,
+`mcp-defer-measured`, `skill-budget-fill`, `fleet-top-cost`, `fleet-unfired-rent`,
+`fleet-no-frequency`) — which is why the ratio moved despite eleven new ids.
 
 The uncovered ids, and why each is unproven:
 
@@ -99,6 +124,8 @@ The uncovered ids, and why each is unproven:
 | `doc-total-exposure`, `doc-more-trap` | Both are rollups that need more oversized files than the fixture creates. |
 | `prefix-volatile-memory` | Requires a fixture repo with real git history. |
 | `skill-pool-ratio` | Informational; fires whenever a pool exists. |
+| `window-assumed` | Needs a fixture whose transcripts name a model with no known window — easy, just not built. |
+| `fleet-skewed-repo`, `fleet-truncated` | The fleet fixture is three small repos, so neither the 2× skew threshold nor the `--limit` truncation path is reached. |
 
 Closing this is a **T3** item: PASS iff every `mkFinding` id in `lib/` appears in a test
 assertion, checkable with the same cross-check that produced this table. Worth doing as
@@ -108,7 +135,7 @@ one batch rather than a roadmap row per finding.
 
 | Item | What is blocking |
 |---|---|
-| No CI | The repo has no `.github/workflows`. `npm test` is self-contained and needs no local state, so this is a small job — it just hasn't been done. |
+| ~~No CI~~ | ✅ Closed 2026-07-30. [.github/workflows/test.yml](.github/workflows/test.yml) runs the suite on Node 20/22/24, smoke-tests every command, and fails if pileup grows a dependency. |
 | Five adapter rows are unexercised | Cursor, Copilot, Gemini, Windsurf and Aider paths are declared in [lib/adapter.mjs](lib/adapter.mjs) but no test or real run has confirmed them. Needs either fixtures per harness or an honest downgrade of the claim in the README. |
 | Tokenizer ground-truth calibration | Needs an Anthropic API key for `count_tokens`, or a corpus with authoritative counts committed once. Decide which. |
 | Whether pileup becomes a piper pipeline stage or stays standalone | Product decision. Standalone keeps the open-source story clean; a stage gets promotion-gating for free. Not resolvable from the code. |

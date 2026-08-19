@@ -6,6 +6,155 @@ versions follow [semver](https://semver.org/spec/v2.0.0.html).
 Current state — what pileup is and how to run it — lives in [README.md](README.md).
 Planned work lives in [ROADMAP.md](ROADMAP.md). This file is history only.
 
+## [Unreleased]
+
+Two halves. The first is a correctness pass forced by changes to Claude Code in
+July 2026 — three of pileup's shipped claims had stopped being true, and one was
+producing a wrong number rather than a stale one. The second is `pileup fleet`.
+
+### Fixed
+
+- **MCP tool schemas are no longer unconditionally always-on.** Deferred tool
+  loading (`ENABLE_TOOL_SEARCH`; Anthropic's Tool Search Tool with
+  `defer_loading`) moves them out of the prefix and loads them on demand —
+  reportedly ~85% fewer tool-definition tokens, and *better* tool selection at
+  scale (published evals: Opus 4.5 from 79.5% to 88.1% correct choice). The `mcp`
+  collector asserted the old behaviour as fact. It now detects the setting
+  ([lib/toolsearch.mjs](lib/toolsearch.mjs)) and grades two different worlds,
+  dropping to `info` when deferral is declared rather than grading a cost it has
+  reason to believe is not paid. It reports the *declaration* and says outright
+  that it cannot confirm the setting took effect.
+- **`pileup mcp-cost` was confounded by that setting.** It prices servers by
+  contrasting repos, and repos on opposite sides of deferred loading are not
+  comparable samples — the contrast would attribute a setting to a server. It now
+  prices inside one cohort, names the repos it set aside and why, and separately
+  prices the *setting* by cross-cohort contrast (`mcp-defer-measured`), labelled
+  coarse because the cohorts also differ in declared servers.
+- **The 200k context window default was five times wrong.** Claude Opus 5 became
+  Claude Code's default Opus model with a 1M window, so every share-of-window
+  figure computed against 200k overstated severity. [lib/model.mjs](lib/model.mjs)
+  now resolves the window — `--window`, then a harness-reported window, then the
+  model observed in a transcript, then the default — and the report labels which
+  of the four it used. Only the first two are measured.
+- **One tokenizer was used for every harness row**, so a Codex row and a Claude
+  Code row reported identical token counts for identical files and at least one
+  was wrong by up to ~20%. Per-family ratios now apply (tiktoken 0.91, Anthropic
+  1.0, SentencePiece 1.13, derived from published cross-tokenizer comparisons —
+  *not* a local calibration, which is still the blocked P3 item). The report names
+  the tokenizer per row, because a reader who does not know the rows differ by
+  vendor will read the difference as a bug.
+- **`pileup --only <collector>` silently reported an empty repo.** `audit` passed
+  its whole option object to `resolveHarness`, whose own `only` meant *harness
+  ids* — so a collector name matched no harness and every harness was filtered
+  out. The adapter's option is now `harness`.
+
+### Added
+
+- **`pileup fleet [dir...]`** — every git repo under a directory (or `--repo a,b`),
+  with one row per *document* rather than per repo, ranked by
+  `paid = tokens per turn × turns measured in the repos it is injected into`.
+  This is the ranking a single-repo audit cannot produce: a user-global skill
+  bills in every repo on the machine, which looks like a 200-token line item
+  forty separate times and never once like the number it is. Turns are measured
+  from transcripts; per-turn size is estimated; `paid` applies each document's
+  *current* size to every measured turn, and the report says all three.
+  - Collapses one document installed into several discovery roots into one row,
+    and adds turns once per repo rather than once per installed copy — otherwise
+    an installer's choices multiply the frequency half of the ranking.
+  - Counts slash-command invocations as well as `Skill` calls, so "never fired"
+    covers scripts and commands, not only skills.
+### Fixed: deferred tool loading defaults to ON, and pileup said otherwise
+
+The worst bug of the batch, found while about to act on pileup's own advice. The
+`mcp` collector treated an unset `ENABLE_TOOL_SEARCH` as *off* and produced a
+**HIGH** finding — "deferred tool loading is off, so 10 servers' schemas ride
+every turn" — telling the user to enable something already running, and grading a
+token cost nobody was paying.
+
+The correction is not from a blog post. [lib/toolsearch.mjs](lib/toolsearch.mjs)
+now mirrors the mode resolver decompiled out of the shipped Claude Code binary
+(2.1.220): `auto:0` on, `auto:100` off, `auto`/`auto:N` on, truthy on, falsey off,
+and **unset → on**. Three independent lines of evidence agree: that resolver, a
+session receiving MCP tools as deferred names rather than schemas, and
+`mcp-cost` measuring **8 of 8 declared servers at no cost above noise across 34
+repos**.
+
+- `mcp-deferred` (info) now covers the deferring case and states whether it is
+  declared or defaulted. `mcp-defer-disabled` fires only when something actually
+  switched it off — the one case that deserves a severity.
+- Added `mcp-defer-confirmed`: confirmation from *measurement* rather than from the
+  setting. Declared servers whose measured contrast sits inside the noise floor
+  cannot have loaded schemas, and this is the only check that also catches the two
+  runtime conditions no file scan can see — a non-first-party `ANTHROPIC_BASE_URL`
+  and Vertex AI, which rejects the beta header. It refuses to confirm when
+  measurement refutes it, which is tested.
+- `mcp-server-count` survives either way, on a narrower claim: past roughly 30–50
+  tools, selection degrades however schemas are loaded. That is an accuracy cost,
+  not a token one.
+
+### Added: a check that harness facts cannot rot silently
+
+`npm test` now also runs [test/harness-fact.mjs](test/harness-fact.mjs), which
+fails when a file hard-codes a fact about someone else's software without a dated
+`SOURCE:` comment and a row in [docs/harness-fact.md](docs/harness-fact.md) — the
+register of every such fact, what it claims, and how to re-verify it. It caught two
+uncited files on its first run.
+
+It proves facts are *documented*, not that they are *true*; the latter needs a live
+harness and stays open in the roadmap. Also added `.github/workflows/test.yml`,
+which runs the suite on Node 20/22/24, smoke-tests every command, and fails if
+pileup ever grows a dependency.
+
+### Fixed in `pileup fleet` before release, by running it against 101 real repos
+
+Every one of these produced a plausible-looking wrong number. None was caught by
+a fixture, which is the argument for testing a measurement tool against real data
+before believing it.
+
+- **The fleet total summed across harnesses.** A repo with both a `CLAUDE.md` and
+  an `AGENTS.md` contributed two documents — correctly, they are two files — but
+  adding their cost describes a session nobody has, since only one harness runs at
+  a time. On the reference machine those two files were **97% identical** at 116k
+  and 102k tokens per turn, so the fleet total was overstated by ~100k per turn in
+  one repo alone (3,147M → 1.8B once corrected). This is the rule the single-repo
+  audit already followed and the fleet had quietly broken.
+- **Command names carried their file extension**, so a command with no `name:`
+  frontmatter was recorded as `tna-slack-check.md`. Invocation counting matches
+  that name against what transcripts record, and a transcript says
+  `/tna-slack-check` — so the name could never match and an actively-used command
+  (11 invocations) was reported as **never fired**. Now stripped in
+  [lib/collector/definition.mjs](lib/collector/definition.mjs), which fixes the
+  name everywhere, not only in fleet.
+- **A repo-local skill in two discovery roots counted twice.** Only user-scoped
+  documents were deduped by name; a repo holding the same skill in
+  `.claude/skills/` and `.agents/skills/` reported it as two documents. Memory
+  files are deliberately unaffected — their name *is* the filename, so `CLAUDE.md`
+  and `AGENTS.md` remain the two distinct documents they are.
+- **Turn counts were silently capped at 20 sessions per repo**, the single-repo
+  default, which undercounted one repo's turns by more than half (6,938 against
+  14,354) and every `paid` weighted by it with them. `fleet` now reads 200 sessions
+  per repo by default and reports `fleet-turn-floor` naming any repo still capped,
+  so a floor is never presented as a total.
+- **`formatToken` had no billion tier**, so a fleet total printed as `3147M`.
+- **`pileup skill` undercounted firing, and falsely called a used skill unused.**
+  Found by comparing its numbers against `fleet`'s on the same machine: 51 against
+  81 for the same skill. A definition fires through two channels — a `Skill` tool
+  call and a `/name` slash command — and `skill` counted only the first, so a skill
+  invoked as `/parcel` was reported as **never fired** by the one command whose
+  entire job is saying which skills are unused. The counter now lives in
+  [lib/invocation.mjs](lib/invocation.mjs) and is shared, because it went wrong
+  precisely by existing in two copies that drifted.
+- Added `fleet-twin-memory`: a repo carrying parallel instruction files for two
+  harnesses, reported for the *opposite* of the obvious reason — it is **not**
+  double cost, and two large adjacent rows for one repo invite exactly that
+  misreading. What the pair does cost is drift: edit one and the other harness
+  keeps running the old rules.
+
+- **Skill descriptions are graded against the harness character budget**, which
+  Claude Code sizes at 2% of the context window — 4,000 characters at 200k,
+  20,000 at 1M. Over that ceiling it stops being a cost question: descriptions are
+  dropped or truncated and which skill loses is not the user's choice.
+
 ## [0.1.0] — 2026-07-27
 
 Initial cut. Built in one session, from an empty directory.

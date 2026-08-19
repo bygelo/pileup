@@ -1,0 +1,40 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The floor is what `npx pileup` can land on, not what the author runs.
+        node: ['20', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # No `npm ci`: pileup has zero dependencies and there is no lockfile to
+      # install from. That is the distribution story, so CI should prove it holds.
+      - name: refuse to grow a dependency
+        run: |
+          node -e '
+            const p = require("./package.json");
+            const dep = {...p.dependencies, ...p.devDependencies};
+            const n = Object.keys(dep).length;
+            if (n) { console.error(`pileup must stay zero-dependency; found ${n}: ${Object.keys(dep)}`); process.exit(1) }
+            console.log("zero dependencies confirmed")
+          '
+      - run: npm test
+      # Every command must at least run on a repo that is not the author's.
+      - name: smoke-test each command
+        run: |
+          for c in "" "session" "surface" "skill" "mcp-cost" "fleet --repo ."; do
+            echo "--- pileup $c"
+            node bin/pileup.mjs $c > /dev/null || exit 1
+          done
+          node bin/pileup.mjs --help > /dev/null
+          echo "all commands exit 0"

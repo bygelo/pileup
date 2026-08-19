@@ -17,7 +17,8 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --test \"test/**/*.test.mjs\""
+    "test": "node --test \"test/**/*.test.mjs\" && node test/harness-fact.mjs",
+    "harness-fact": "node test/harness-fact.mjs"
   },
   "keywords": [
     "claude-code",

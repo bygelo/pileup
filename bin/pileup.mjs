@@ -3,11 +3,13 @@
 
 import { resolve } from 'node:path'
 import { audit } from '../lib/audit.mjs'
+import { auditFleet } from '../lib/fleet.mjs'
 import { auditSkill } from '../lib/skill.mjs'
 import { auditMcpCost } from '../lib/mcpcost.mjs'
 import {
   render,
   renderFinding,
+  renderFleet,
   renderMcpCost,
   renderSession,
   renderSkill,
@@ -17,10 +19,16 @@ const USAGE = `
 pileup -- audit what your coding agent actually reads
 
   pileup [audit] [path]     rank the repo's context surface by cost x frequency
+  pileup fleet [dir...]     every repo under dir, ranked by measured turns x size
   pileup session [path]     measured token spend from local session transcripts
   pileup skill              what the skill discovery root costs, and what it earns
   pileup mcp-cost           price MCP servers by contrast across all your repos
   pileup surface [path]     dump every surface pileup found, no grading
+
+fleet options
+  --repo <a,b>              audit exactly these repos instead of discovering them
+  --limit <n>               stop after this many repos (default 60)
+  --depth <n>               how deep to look for a .git (default 4)
 
 skill options
   --pool <dir>              skill pool outside the discovery root (default ~/.piper/skills-pool)
@@ -54,10 +62,31 @@ if (arg.includes('--help') || arg.includes('-h')) {
   process.exit(0)
 }
 
-const COMMAND = new Set(['audit', 'session', 'surface', 'skill', 'mcp-cost'])
+const COMMAND = new Set(['audit', 'fleet', 'session', 'surface', 'skill', 'mcp-cost'])
 const command = COMMAND.has(arg[0]) ? arg.shift() : 'audit'
 
 const flag = parseFlag(arg)
+
+// `fleet` takes directories to search rather than one repo, because the whole
+// point is that a document's cost is spread across repos.
+if (command === 'fleet') {
+  const report = auditFleet({
+    dir: flag._.length ? flag._.map((d) => resolve(d)) : undefined,
+    repo: split(flag.repo)?.map((r) => resolve(r)),
+    limit: flag.limit ? Number(flag.limit) : undefined,
+    depth: flag.depth ? Number(flag.depth) : undefined,
+    window: flag.window ? Number(flag.window) : undefined,
+    user: !flag['no-user'],
+    sessionLimit: flag.sessions ? Number(flag.sessions) : undefined,
+  })
+  if (flag.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
+  else if (!report.item.length) process.stdout.write(`\n  ${report.note ?? 'nothing to report'}\n\n`)
+  else {
+    process.stdout.write(renderFleet(report))
+    process.stdout.write(renderFinding(report.finding, { all: flag.all }))
+  }
+  process.exit(0)
+}
 
 // `mcp-cost` prices servers by comparing every repo on the machine, so it takes
 // no path either.
@@ -78,6 +107,7 @@ if (command === 'skill') {
     pool: flag.pool,
     ledger: flag.ledger,
     root: flag.root,
+    window: flag.window ? Number(flag.window) : undefined,
   })
   if (flag.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
   else {
