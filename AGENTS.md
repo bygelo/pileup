@@ -64,6 +64,7 @@ node bin/pileup.mjs fleet ~/Antigravity --json
 
 ## Consumers
 
-`booted`'s house catalog (127.0.0.1:5173) shells `pileup fleet --json` to show
-context cost beside port claims. It reads the JSON contract, so a rename in
-`fleet` output is a breaking change for it.
+At least one dashboard shells `pileup fleet --json` and renders context cost
+beside its other per-repo columns. That makes the fleet JSON a published
+interface: renaming a key in it is a breaking change for something you cannot
+see from here.
